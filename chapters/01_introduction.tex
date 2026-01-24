@@ -1,0 +1,20 @@
+\chapter{Introduction}
+
+% TODO
+% What are policies
+%% ...
+% Policy agents
+%% Offloading logic from the software
+%% ...
+% What is the purpose of this work
+% Why are we doing it like this?
+
+With countless available software services, they often need to behave based on a set of rules.
+Such set of rules is called a policy and it could describe rate-limits, permitted network routes, or accounts a user can withdraw money from.
+For a service to be successful, it needs to make sure, that its policy is valid and kept.
+
+Usually, policies are hard-coded into the services, which often makes them difficult to maintain, since they are spread into multiple files and contexts.
+Since they play a crucial part in the safety of today's internet, there has been a great effort to specify and evaluate them separate of the main source code.
+This has lead to the creation of policy agents, which are run parallel to the main program and queries are sent to them to evaluate the correctness of actions, according to the specified policy.
+
+
