@@ -1,0 +1,180 @@
+\chapter{Theory, Current State}
+\label{ch:theory}
+
+% TODO
+%% What is this chapter about
+In this chapter, we will lay down the base for the following text, with the main focus on the Rego language and SMT solving.
+Since both topics are under constant development, we will include the possible limitations implied by both technologies.
+
+\section{Open Policy Agent}
+
+Open Policy Agent (OPA) is a general-purpose policy engine designed to decouple policy decision making from application logic.
+Policy decision making refers to the evaluation of conditions that determine whether actions such as access requests, configuration changes, or deployment operations should be permitted or denied.
+OPA provides a high-level declarative language and evaluation framework that allows policies to be expressed independently of the systems that enforce them.
+OPA can be integrated with diverse systems including microservices, API gateways, Kubernetes admission controls, and CI/CD pipelines.
+
+\begin{figure}
+    \label{fig:opa-query-graph}
+    \centering
+    \input{figures/opa-query-graph.tex}
+    \caption{Structure of communication between a service and OPA.}
+\end{figure}
+
+The motivation for adopting OPA arises from the need to manage and enforce policies consistently across heterogeneous environments.
+Traditional approaches often embed policy logic directly into application code, leading to duplicated logic, inconsistencies, and challenges in governance and auditing.
+Policy as code is the paradigm of expressing access control, security, compliance, and other governance policies in a machine-readable, executable form.
+It elevates policy definitions to first-class artifacts in version control systems, enabling automated testing, review, and lifecycle management similarly to application code.
+OPA embodies this paradigm by treating policies as modular, executable artifacts written in a dedicated language.
+
+The core language used by OPA for policy expression is \emph{Rego}.
+Rego is a purpose-built declarative policy language inspired by Datalog, designed to reason over structured documents, most significantly in JSON format.
+Rego allows authors to express queries, rules, constraints, and derived values without specifying a procedural control flow.
+Because Rego is declarative, users define what constitutes a valid decision rather than how to compute it; under the hood, OPA’s evaluation engine determines an efficient execution plan for query evaluation.
+Rego’s declarative nature enables optimized evaluation and composability of policy rules.
+
+Figure \ref{fig:opa-query-graph} depicts the high-level point of view on the communication between a service and OPA.
+Client requests are transformed into queries to the OPA; we will often call these queries \emph{input} in the following text.
+The OPA then evaluates the query with respect to a policy specified in Rego and a JSON document representing the service data (e.g., list of permitted servers).
+
+Rego policies are composed in \emph{modules}.
+A module consists of exactly one package declaration, zero or more import statements, and zero or more rule definitions.
+The package declaration defines a namespace for rules, enabling modularization and reuse across policy sets.
+Import statements allow references to external data or built-in functions.
+Rules constitute the core logical expressions that define policy outcomes.
+Each rule has a \emph{head} and a \emph{body}; the head names the rule and optionally declares keys and values, while the body contains logical expressions that must be satisfied for the rule to apply.
+A rule in Rego can be either \emph{complete} or \emph{partial}.
+A complete rule assigns a specific value to a variable when its body conditions are true.
+A partial rule may define part of a set or object document by generating entries that satisfy the body expressions.
+Variables in Rego are implicitly existentially quantified; the evaluation finds bindings that satisfy all expressions in the rule body.
+Universal quantification constructs such as every provide an explicit mechanism to express conditions over entire collections.
+
+Rules operate on documents—hierarchical structured data typically represented as JSON.
+When OPA evaluates a policy, it accepts an input document (representing the context for a decision) along with arbitrary structured base data; policies then generate decision outputs that may be booleans, messages, sets, or arbitrarily complex data.
+In practice, the input to OPA might include user identity, resource attributes, and environmental context, while data documents might include role definitions, access control lists, or trusted configuration parameters.
+The output of policy evaluation is returned to the calling system, which can then enforce the decision.
+
+Rego supports composite types including arrays, objects, and sets.
+These types enable succinct expressions over nested data structures.
+For example, rules can join elements of collections implicitly, bind variables to specific parts of the input, or generate sets of conditionally derived values.
+Built-in functions provide common operations such as string manipulation, arithmetic, aggregation, and type inspection; these can be called within rule bodies to facilitate complex logic.
+
+Because policies are declarative, authors are freed from specifying how rule evaluation proceeds.
+Instead they express logical conditions that describe acceptable or unacceptable states.
+This declarative nature simplifies reasoning about policy correctness and supports automated tooling to optimize, test, and validate policy sets.
+Furthermore, because Rego is domain-agnostic, policies can describe decisions that extend beyond simple allow/deny semantics to produce structured decision outputs tailored to the needs of diverse enforcement points.
+
+
+\section{SMT}
+\label{sec:smt}
+
+% TODO
+%% What is complete, sound, ...
+% Inference rules
+% Array theory
+% Unint func theory
+
+This section will describe the details behind SMT which the work of this thesis is laid upon.
+This involves looking at the basic functionality of SMT and a quick dive into the inner workings that imply the possible limitations.
+In adition, I will describe the \ziii SMT solver which is used in the implementation of this work to evaluate the SMTLIB formulae.
+Since this solver allows reasoning over theories, which are not explicitly in the SMTLIB2 standart and which are essential to this work, they will also be discussed.
+
+%% SMT-LIB, theories, soundness, completeness
+
+\subsection{Z3}
+
+\textit{The information about \ziii is taken from TODO.}
+
+\ziii is SMT solver from Microsoft Research with its first external release dating back to 2007.
+Its main purpose is solving problems that arise in software verification and analysis.
+\ziii integrates support for a variety of theories, with the most prevalent for this work being linear integer arithmetic, strings, and arrays.
+
+\ziii is implemented in C++ and it is designed to be highly extensible, thanks to its
+modularity. From a high-level point of view, \ziii integrates:
+\begin{itemize}
+    \item 
+        \emph{Core theory SAT solver.} Solver of propositional logic formulas based on Davis–Putnam–Logemann–Loveland (DPLL) algorithm. 
+        This solver is used to handle equalities and uninterpreted functions.
+    \item 
+        \emph{Satellite solvers.}
+        Specialized theory solvers.
+    \item 
+        \emph{E-matching abstract machine.}
+        This component finds instantiations of quantified formulas that lead to a satisfiable solution.
+\end{itemize}
+
+\begin{figure}
+    \label{fig:z3-system-arch}
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/z3-system-arch.png}
+    \caption{System architecture of Z3.}
+\end{figure}
+
+A schematic overview of the structure of \ziii is shown in Figure~\ref{fig:z3-system-arch}.
+Essential components of \ziii are then described as follows:
+
+\paragraph{Input.}
+It is possible to interact with \ziii using either a textual format or a binary API.
+As mentioned in TODO the textual input can appear in several different forms with the most notable one being SMTLIB2 format, which uses a LISP-like syntax.
+Programmatic interaction with this tool is possible through an API from Python, C, C++, Go, Java, and other languages.
+
+\paragraph{Simplifier.}
+To offer the maximal performance, input formulas are first simplified in an incomplete, but efficient process.
+The simplify a formula, this component applies standard algebraic reduction rules.
+For example $p \land true$ can be reduced to just $p$.
+In this process, the simplifier even tries to identify equational definitions (such as $x = 4$) within a context and using given definition, it then reduces the remaining formula.
+For example, $x = 4 \land q(x)$ can be this way reduced to $x = 4 \land q(4)$.
+
+\paragraph{Compiler.}
+This component takes a simplified abstract syntax tree representation of the input formula and converts it into a different data structure.
+Such data structure comprises a set of clauses and congruence-closure nodes.
+
+\paragraph{Atoms.}
+Atoms, or atomic formulas, are formulas, which cannot be further decomposed into simpler logical components.
+Atoms can be either equalities or theory specific atoms (for instance an arithmetical inequality).
+
+\paragraph{Congruence Closure Core.}
+The congruence closure core receives truth assignments to atoms from the SAT solver.
+Such asserted equalities are then propagated using a data structure called E-graph, with nodes in such a graph pointing to one or more theory solvers.
+A merge of two nodes is propagated to all theory solvers pointed to by the given nodes.
+The core also propagates the effects of the theory solvers.
+Such effects can range over inferred equalities to assignment of atoms to true or false.
+In the case of non-convex theories (i. e., theories for which quantifier elimination and other automated reasonings are complicated or impossible), the theory solvers can also produce fresh atoms.
+
+\paragraph{Theory Solvers.}
+\ziii’s ability to solve constraints of a specific theory comes from its integration with a solver for given theory.
+These specialized solvers are called theory solvers or satellite solvers.
+As shown in the Figure TODO, solvers are used to produce new atoms for given assignment from the \ziii core, i.e., the congruence closure core.
+
+\paragraph{E-matching Engine.}
+This engine is used reasoning over quantifiers, where \ziii combines a well known approach with new algorithms described in [17].
+In this process, it operates over the E-graph data structures and passes generated clauses to the SAT solver.
+
+\paragraph{SAT Solver.}
+\ziii leverages the power of state-of-the-art SAT solver which integrates standard search pruning methods.
+It is used to control boolean case splits generated by the \ziii core (sometimes with the extra step of E-matching).
+
+\gap
+
+The components of \ziii offer a special set of tools and techniques which help the SMT
+solver stand out amongst others. The most significant being:
+
+\paragraph{Deleting Clauses.}
+During quantifier instantiation, clauses containing new atoms are as a side-effect produced into the search space.
+When such clause is useless in closing branches, it is garbage collected together with its atoms and terms.
+Conflict clauses are not deleted, but retained as a side-effect.
+
+\paragraph{Relevancy Propagation.}
+In practice, several atoms appearing in a goal of an SMT solver are irrelevant, or so called \emph{don’t cares}.
+For expensive theories, \ziii ignores such atoms and inference rules.
+To distinguish relevant atoms from don’t cares, \ziii uses algorithm described in TODO.
+
+\paragraph{Model Generation.}
+\ziii has the ability to produce models as part of the output.
+Such models assign values to the constants in the input and generate partial function graphs for predicates and function symbols.
+
+\gap
+
+\ziii has estabilished itself as a state-of-the-art SMT solver since its release in 2007.
+It has remained with this title to this day, because of his stability, efficiency and modularity.
+It also supports a variety of non-standart theories, such as Array theory.
+For these reasons, we have decided to focus the SMT code generation presented in the next chapters onto it.

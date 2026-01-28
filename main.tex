@@ -44,6 +44,7 @@
 \csdoublequotesoff
 
 \usepackage{url}
+\usepackage{tikz}
 
 % =======================================================================
 % "hyperref" package create clickable links in pdf if you are using pdflatex.
@@ -176,6 +177,8 @@ Při tvorbě odevzdaného programového kódu jsem využíval nástroj Github Co
 % Nechcete-li, aby se u oboustranného tisku roztahovaly mezery pro zaplnění stránky, odkomentujte následující řádek / If you do not want enlarged spacing for filling of the pages in case of duplex printing, uncomment the following line
 % \raggedbottom
 
+\input{macros}
+
 \begin{document}
   % Vysazeni titulnich stran / Typesetting of the title pages
   % ----------------------------------------------
@@ -246,6 +249,7 @@ Při tvorbě odevzdaného programového kódu jsem využíval nástroj Github Co
   % ----------------------------------------------
   \ifenglish
     \input{chapters/01_introduction}
+    \input{chapters/02_theory}
   \fi
   
   % Kompilace po částech (viz výše, nutno odkomentovat a zakomentovat input výše)

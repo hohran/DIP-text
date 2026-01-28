@@ -1,0 +1,28 @@
+
+%%%% Rego
+
+%% What will this section describe?
+Rego Policy Language is the specification language for Open Policy Agent (OPA).
+Rego is similar to Datalog TODO in its structure.
+It is a declarative language that focuses heavily on its readability and ensuring unambiguity of queries.
+On the other hand, it provides powerful support for working with nested documents.
+Like other applications which support declarative query languages, OPA is able to optimize queries to improve performance.
+This section describes the key characteristicts of the Rego policy language, based on the official documentation of Open Policy Agent (OPA) TODO.
+
+%%% What are the key features of rego policies
+% \subsection{Input and Data}
+
+For Rego, query is the input in the form of structured document, usually in JSON format.
+To evaluate it properly, the OPA needs to have access to the internal data, which can store, for example, forbidden servers, allowed actions for users, list of administrators, etc.
+...
+
+\subsection{Rules}
+
+A Rego policy consists of three parts: package specification, imports, and rules.
+Package specification is a manadory line, which specifies the package for current policy.
+Imports are voluntary declarations of other packages, that the current policy is dependent on, i.e., it some of its functions.
+
+%%% What is the input / data
+%%% How do the rules work
+
+%%%% END Rego %%%%

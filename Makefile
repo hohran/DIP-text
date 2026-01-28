@@ -52,9 +52,9 @@ rename:
 	
 # Pozor, vlna neresi vse (viz popis.txt) / Warning - vlna is not solving all problems (see description.txt)
 vlna:
-	vlna -l $(CO)-*.tex
+	vlna -l $(CO).tex
 
 # Spocita normostrany / Count of standard pages
 normostrany:
-	echo "scale=2; `detex -n $(CO)-[01]*.tex | sed s/"^ *"/""/ | sed s/"^	*"/""/ | wc -c`/1800;" | bc
+	echo "scale=2; `detex $(CO).tex | sed s/"^ *"/""/ | sed s/"^	*"/""/ | wc -c`/1800;" | bc
 
