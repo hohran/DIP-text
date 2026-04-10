@@ -7,6 +7,7 @@ In this chapter, we will lay down the base for the following text, with the main
 Since both topics are under constant development, we will include the possible limitations implied by both technologies.
 
 \section{Open Policy Agent}
+\label{sec:opa}
 
 Open Policy Agent (OPA) is a general-purpose policy engine designed to decouple policy decision making from application logic.
 Policy decision making refers to the evaluation of conditions that determine whether actions such as access requests, configuration changes, or deployment operations should be permitted or denied.
@@ -48,10 +49,28 @@ A partial rule may define part of a set or object document by generating entries
 Variables in Rego are implicitly existentially quantified; the evaluation finds bindings that satisfy all expressions in the rule body.
 Universal quantification constructs such as every provide an explicit mechanism to express conditions over entire collections.
 
+Every rule is composed of the \texttt{head} (an assignment) and the \texttt{body}, which is a set of expressions, that are all evaluated as a \texttt{boolean} value.
+If all of the expressions in the rule body hold, i.e., their conjunction is evaluated as \texttt{true}, the assignment in the rule head is also valid.
+Otherwise, the assignment is not executed.
+It is therefore mandatory, that only one rule body can be true for a variable.
+
+\paragraph{Example.}
+Let \texttt{a := 1 if \{ b == "valid" \}} be a rule in Rego policy $\mathcal{R}$.
+Then \texttt{a := 1} is the rule head and \texttt{\{ b == "valid" \}} is the rule body, containing a single expression.
+When $b$ is equal to \texttt{"valid"}, then \texttt{a} is equal to $1$.
+
+There are special rules, called the defaults, in the form \texttt{default <head>}, meaning they are missing a body and the \texttt{<head>} represents an assignment into variable $v$.
+If for all rules about $v$, none have a body that evaluates to \texttt{true}, its assignment from the default rule applicated.
+In the case, that even the default rule is missing and every body evaluates to \texttt{false}, the variable is \texttt{undefined}.
+
+
 Rules operate on documents—hierarchical structured data typically represented as JSON.
 When OPA evaluates a policy, it accepts an input document (representing the context for a decision) along with arbitrary structured base data; policies then generate decision outputs that may be booleans, messages, sets, or arbitrarily complex data.
 In practice, the input to OPA might include user identity, resource attributes, and environmental context, while data documents might include role definitions, access control lists, or trusted configuration parameters.
 The output of policy evaluation is returned to the calling system, which can then enforce the decision.
+
+As we can see in Figure \ref{fig:opa-input-example} the input is in the JSON format, as one document.
+Moreover, it is just a single object, which can be queried with the rules specified in Rego Policy Language.
 
 Rego supports composite types including arrays, objects, and sets.
 These types enable succinct expressions over nested data structures.
@@ -63,8 +82,14 @@ Instead they express logical conditions that describe acceptable or unacceptable
 This declarative nature simplifies reasoning about policy correctness and supports automated tooling to optimize, test, and validate policy sets.
 Furthermore, because Rego is domain-agnostic, policies can describe decisions that extend beyond simple allow/deny semantics to produce structured decision outputs tailored to the needs of diverse enforcement points.
 
+\begin{figure}
+    \label{fig:opa-input-example}
+    \centering
+    \input{figures/opa-input-example.tex}
+    \caption{Example of input and output of Open Policy Agent.}
+\end{figure}
 
-\section{SMT}
+\section{SMT Solving}
 \label{sec:smt}
 
 % TODO
@@ -75,14 +100,80 @@ Furthermore, because Rego is domain-agnostic, policies can describe decisions th
 
 This section will describe the details behind SMT which the work of this thesis is laid upon.
 This involves looking at the basic functionality of SMT and a quick dive into the inner workings that imply the possible limitations.
-In adition, I will describe the \ziii SMT solver which is used in the implementation of this work to evaluate the SMTLIB formulae.
+In adition, I will describe the \ziii SMT solver which is used in the implementation of this work to evaluate the SMT-LIB formulae.
 Since this solver allows reasoning over theories, which are not explicitly in the SMTLIB2 standart and which are essential to this work, they will also be discussed.
 
+\subsection{Preliminaries}
+
+\paragraph{SAT Solving.}
+% Propositional formula ...
+% A literal $l$ is either a variable $x_i$ or its complement $\neg x_i$.
+% A clause $\omega$ is a disjunction of literals.
+% Let formula
+Propositional formulas are represented in Conjunctive Normal Form (CNF).
+A CNF formula is represented using $n$ boolean variables $x_1, x_2, \dots , x_n$ and a boolean assignment $\mathcal{A}$ maps varaibles $x_i$ to truth values 0 (\texttt{false}) or 1 (\texttt{true}) for $0 \leq i \leq n$.
+A literal $l$ is either a variable $x_i$ (i.e., a positive literal) or its complement $\neg x_i$ (i.e., a negative literal).
+A clause $\omega$ is a disjunction of literals and a CNF formula $\phi$ is a conjunction of clauses.
+For a boolean assignment $\mathcal{A}$, $\omega$ is \emph{satisfied} if at least one of its literals is mapped to \texttt{true} and $\phi$ is satisfied if all its clauses are satisfied.
+In such case, we say that $\mathcal{A}$ is \emph{solution} to $\phi$.
+A formula is \emph{satisfiable} (\emph{SAT}) if there exists at least one solution to it, and \emph{unsatisfiable} (\emph{UNSAT}) otherwise.
+Finding such solution is called the \emph{Boolean Satisfiability problem} and it is traditionally referred to as the \emph{SAT problem}.
+
+\begin{example}
+    Consider the following formula $\phi = (x_1 \lor x_2 \lor \neg x_3) \land (x_2 \lor x_3) \land(\neg x_1 \lor \neg x_2 \lor \neg x_3)$.
+    This formula has 3 variables, 3 clauses, and is satisfiable under the assignment $x_1 \rightarrow 1, x_2 \rightarrow 1, x_3 \rightarrow 0$.
+\end{example}
+
+%% TODO completeness, decidability
+
+\paragraph{Satisfiability Modulo Theories.}
+The defining problem of Satisfiability Modulo Theories (SMT) is checking whether a given (closed) logical formula $\phi$ is satisfiable, not in general but in the context of some background theory $\T$ which constrains the interpretation of the symbols used in $\phi$.
+Technically, the SMT problem for $\phi$ and $\T$ is the question of whether there is a model of $\mathcal{T}$ that makes $\phi$ true.
+\emph{SMT solver} is a software that implements a procedure for satisfiability modulo some given theory. 
+
+
+
+
+
 %% SMT-LIB, theories, soundness, completeness
+\subsection{SMT-LIB}
+
+Satisfiability Modulo Theories is an area of automated deduction that studies methods for checking the satisfiability of first-order formulas with respect to some logical theory $\mathcal{T}$ of interest. \cite{smt:sm-theories, smt:first-ord-logic}
+What sets apart SMT from general automated deduction is that the background theory $\mathcal{T}$ need not be finitely or even first-order axiomatizable, and that specialized inference methods are used for each theory.
+By being theory-specific and restricting their language to certain classes of formulas (such as, typically but not exclusively, quantifier-free formulas), these specialized methods can be implemented in solvers that are more efficient in practice than general-purpose theorem provers.
+
+The SMT-LIB Standard is an international initiative and specification that defines a common language and infrastructure for interacting with SMT solvers.
+SMT-LIB aims to facilitate research, development, comparison, and benchmarking of SMT solvers by providing rigorous definitions of languages, theories, and interfaces used in the automated reasoning community.
+The initiative also supports a large library of benchmark problems written in a standardized format.
+
+The SMT-LIB Standard Version defines a formal language for writing logical formulas, specifying background theories, defining logics, and interacting with SMT solvers via a command-based interface. The standard’s objectives include: providing a common input/output language for SMT solvers; defining a standard set of sorts, functions, and predicates for background theories; and supporting structured benchmark libraries for experimental evaluation.
+
+SMT-LIB’s language is based on many-sorted (typed) first-order logic with equality, where terms and formulas are strongly typed and structured according to defined sorts such as Bool, Int, and user-defined or theory-specific sorts.
+Scripts in the SMT-LIB language consist of commands that declare symbols, assert formulas, query solver actions (e.g., \texttt{check-sat}), and interact with solver responses.
+SMT-LIB’s syntax uses S-expressions similar to Lisp to represent terms and commands.
+
+The standard separates concerns into clearly defined components:
+\begin{itemize}
+    \item \emph{Formula language} — a typed logical language for defining SMT problems.
+    \item \emph{Theory declarations} — definitions of sorts and function symbols that form the semantic basis for logical theories (e.g., integers, arrays, bit vectors, strings).
+    \item \emph{Logic specifications} — combinations of theory signatures and syntactic restrictions that define classes of admissible formulas.
+    \item \emph{Command language} — a textual interface for communicating with SMT solvers, including declaring symbols, asserting constraints, checking satisfiability, and retrieving models.
+\end{itemize}
+
+The standard also maintains a catalog of benchmark problems in the SMT-LIB format, grouped by logics and used in community-driven evaluations such as SMT-COMP.
+These benchmarks support the systematic assessment of solver performance and feature diverse problem classes across background theories.
+
+The SMT-LIB standard distinguishes between \emph{basic} theories and \emph{combined} theories.
+Basic theories, such as the theory of real numbers, the theory of arrays, the theory of fixed-size bit vectors and so on, are those explicitly defined in the SMT-LIB catalog.\footnote{The catalog of basic theories in SMT-LIB is avaliable at \url{https://smt-lib.org}.}
+Combined theories are defined implicitly in terms of basic theories by means of a general modular combination operator.
+The difference between a basic theory and a combined one in SMT-LIB is essentially operational.
+Some SMT-LIB theories, such as the theory of finite sets with a cardinality operator, are defined as basic theories, even if they are in fact a combination of smaller theories, because they cannot be obtained by modular combination.
+
+%% TODO quantifiers
 
 \subsection{Z3}
 
-\textit{The information about \ziii is taken from TODO.}
+\textit{The information about \ziii is taken from \cite{z3} and \cite{z3:web}.}
 
 \ziii is SMT solver from Microsoft Research with its first external release dating back to 2007.
 Its main purpose is solving problems that arise in software verification and analysis.
@@ -92,7 +183,7 @@ Its main purpose is solving problems that arise in software verification and ana
 modularity. From a high-level point of view, \ziii integrates:
 \begin{itemize}
     \item 
-        \emph{Core theory SAT solver.} Solver of propositional logic formulas based on Davis–Putnam–Logemann–Loveland (DPLL) algorithm. 
+        \emph{Core theory SAT solver.} Davis–Putnam–Logemann–Loveland (DPLL) algorithm based solver of propositional logic. 
         This solver is used to handle equalities and uninterpreted functions.
     \item 
         \emph{Satellite solvers.}
@@ -114,7 +205,7 @@ Essential components of \ziii are then described as follows:
 
 \paragraph{Input.}
 It is possible to interact with \ziii using either a textual format or a binary API.
-As mentioned in TODO the textual input can appear in several different forms with the most notable one being SMTLIB2 format, which uses a LISP-like syntax.
+As mentioned in \cite{z3:web} the textual input can appear in several different forms with the most notable one being SMTLIB2 format, which uses a LISP-like syntax.
 Programmatic interaction with this tool is possible through an API from Python, C, C++, Go, Java, and other languages.
 
 \paragraph{Simplifier.}
@@ -178,3 +269,65 @@ Such models assign values to the constants in the input and generate partial fun
 It has remained with this title to this day, because of his stability, efficiency and modularity.
 It also supports a variety of non-standart theories, such as Array theory.
 For these reasons, we have decided to focus the SMT code generation presented in the next chapters onto it.
+
+\section{Arrays in Z3}
+
+\textit{Information provided in this section is based on the research from \cite{z3:array-theory}.}
+
+Arrays constitute one of the fundamental interpreted theories provided by Z3.
+They are used to model finite or infinite memory structures, such as program heaps, buffers, or lookup tables, in a mathematically precise yet flexible way.
+This section summarizes the basic concepts of the theory of arrays as used in Z3, following the standard presentation adopted in SMT-based verification.
+
+An array is viewed as a total function from an index sort to an element sort.
+For given sorts $I$ (indices) and $E$ (elements), the array sort is denoted by $\text{Array}(I, E)$.
+Intuitively, an array assigns to every index $i \in I$ a value $e \in E$.
+Arrays in Z3 are immutable objects; operations on arrays therefore return new arrays rather than modifying existing ones.
+
+\subsection{Read and Store Operations}
+
+The behavior of arrays is characterized by two primary operations: \emph{read} and \emph{store}. The read operation, usually written as
+$$
+\text{select}(a, i),
+$$
+returns the element stored in array $a$ at index $i$.
+Semantically, this corresponds to function application.
+
+The store operation,
+$$
+\text{store}(a, i, v),
+$$
+produces a new array that is identical to $a$ at all indices except possibly at $i$, where it yields the value $v$.
+The original array $a$ remains unchanged.
+This functional view is essential for reasoning in first-order logic and enables equational reasoning about array updates.
+
+The interaction between read and store is governed by two fundamental axioms.
+First, reading from the index that was just updated returns the stored value:
+$$
+\text{select}(\text{store}(a, i, v), i) = v.
+$$
+Second, reading from a different index is unaffected by the store:
+$$
+i \neq j ;\Rightarrow; \text{select}(\text{store}(a, i, v), j) = \text{select}(a, j).
+$$
+Together, these properties precisely capture the intended semantics of array updates.
+
+\subsection{Constant Arrays and the $K$ Operator}
+
+In addition to read and store, Z3 provides a constant array constructor, commonly denoted by the $K$ operator. For a given element value $v \in E$, the term
+$$
+K(v)
+$$
+denotes an array that maps every index to $v$.
+Constant arrays are useful for modeling uniform initialization, such as freshly allocated memory filled with a default value.
+
+Formally, for all indices $i$, the following property holds:
+$$
+\text{select}(K(v), i) = v.
+$$
+Constant arrays can be combined with store operations to describe more complex memory states, for example by starting from a uniform array and applying a sequence of updates.
+
+\subsection{Summary}
+
+The theory of arrays in Z3 is based on a small set of well-defined operations and axioms.
+Arrays are total, immutable functions; \texttt{select} models lookup, \texttt{store} models functional update, and the $K$ operator provides uniformly initialized arrays.
+Despite their simplicity, these constructs are expressive enough to model a wide range of data structures encountered in program analysis and formal verification.

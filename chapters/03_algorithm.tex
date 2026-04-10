@@ -3,8 +3,113 @@
 
 % TODO
 %% What is this chapter
+The goal of this work is to construct an algorithm, which would be able to transform a policy, specified in the Rego Policy Language (as depicted in Section \ref{sec:opa}), and an input query into the SMT-LIB2 format (specified in Section \ref{sec:smt}).
+In this chapter, I will present the theoretical principle of this transformation.
+In adition, after that we will focus on the formal analysis, which such algorithm would make possible.
 
-% Overview
+\section{Overview}
+\label{sec:overview}
 
+As it was already mentioned in section \ref{sec:opa}, the Rego Policy Language is dynamically typed.
+Since in the SMT-LIB2 standard, every value need to have specified type (i.e., sort), the main pillar of this analysis is a type inference.
+For this brief overview, we will assume that every variable has an inambiguous type, which we know prior to the transformation.
+In other words, let $\mathcal{I}: \mathcal{V} \rightarrow \sigma$ be a mapping of variables onto their specific data type for the policy $\mathcal{R}$.
+For the rest of this paper, we will denote the type of variable $v$ as $\sigma_v$.
+
+Since the Rego Policy Language has a declarative nature, the order in which its rules are processed does not matter.
+We will thus only discuss each case possible for the rules.
+
+\paragraph{Data Types.}
+As the sorts of used variables need to be known in the SMT-LIB, we need to first define them.
+So for the type mapping $\mathcal{I}$, we get the data type with the greatest depth $d$ (see \ref{sec:opa}) % TODO in theory
+and specify a new sort \texttt{OTypeD$_d$}.
+This sort is an enumeration of three descendant sorts:
+\begin{enumerate}
+    \item \texttt{OAtom$_{d-1}$}
+    \item \texttt{OArray$_{d-1}$}
+    \item \texttt{OObject$_{d-1}$}
+\end{enumerate}
+For $0 \le i \le d$, the sorts \texttt{OTypeD$_i$} are specified in the same manner.
+The final sort \texttt{OTypeD0} then enumerates over atomic sorts \texttt{Integer}, \texttt{String}, \texttt{Boolean}, \texttt{Null}, and \texttt{Undef}.
+
+
+\paragraph{Default Rules.}
+\label{par:defaults}
+Each variable $v \in \mathcal{V}$ can have at most $1$ default rule.
+We keep a mapping $D: v \rightarrow \sigma_v$, in which we store the default values for each variable.
+Naturally, for a default value assigning value $x$ to $v$, we add $v \rightarrow x$ to the mapping $D$.
+
+\paragraph{Expressions.}
+Each expression is composed of Rego specific functions, including basic arithmetic and string operators.
+In SMT-LIB, some of those functions are supported by default, meaning that they can be correctly transformed into it.
+In our current stage, we do not support only the intersection of Rego and SMT-LIB functions.
+
+\paragraph{Rule Body.}
+A rule body is a set of $n$ conditions that need to hold in order for the respective rule to be active.
+These conditions are in form of expressions and are evaluated as a conjunction of the boolean value of those expressions.
+Expressions $r$ which are not of type \texttt{Boolean} need to be checked, whether they are not \texttt{Undef}.
+This is done by modifying them into the form \texttt{(is-OUndef $r$)}.
+Once we transform each expression $\epsilon_i$ into its SMT-LIB representation $r_i$ and then create a conjunction $\bigwedge^{0 \leq i \leq n}r_i$.
+
+\paragraph{Non-parametric Rules.}
+A non-parametric rule is composed of a head (assignment) and a body (set of expressions which need to hold).
+Once we obtain the expressions $\phi_{Body}$, $\phi_{Head}$, and $\phi_{Else}$, we add them respectively as arguments into the builtin \texttt{ite} operator.
+We then assert this statement.
+
+\paragraph{Parametric Rules.}
+With parameter present in the rule, we proceed similarly to the non-parametric version.
+The only difference is that we do not assert the final statement, but create a function using the builtin \texttt{define-func} operator.
+Furthermore, we add this function to the set of user specified functions $\mathcal{F}$.
+
+\paragraph{Else Rules.}
+Every non-parametric and parametric rule can have an else branch, which assigns a different value to the specified variable under different circumstances (based on the Else body).
+We evaluate these parts in the same manner as normal head-body rules, but if the Else rule is empty, we provide either the default value from the mapping $D$ (see paragraph \ref{par:defaults}) or, if it is not contained there, we provide the \texttt{Undef} value.
+
+\section{Possible Analysis}
+\label{sec:analysis}
+
+\begin{figure}
+    \label{fig:verirego-analysis-symbolic}
+    \centering
+    \input{figures/verirego-analysis-symbolic.tex}
+    \caption{High-level point of view for symbolic execution of the VeriRego tool.}
+\end{figure}
+
+Next we will talk about the potential usage of this algorithm.
+If we are able to efficiently encode a subset of Rego Policy Language into the SMT-LIB format, it would be possible to evaluate such policy on a symbolic document.
+Such document would be composed of keys as normal, and of values, which could be either concrete (i.e, \texttt{"admin"}) or symbolic (such as \texttt{String}).
+
+Such usage is shown in the Figure \ref{fig:verirego-analysis-symbolic}.
+Be aware that this picture only gives a very high-level point of view on the problem.
+In actuality, the algorithm uses a similar procedure as in transforming objects.
+The only exception for this case is that the produced SMT code would, at the place of a symbolic value being used, only contain a special variable of the specified type.
+When the symbolic value is being used, it is injected with the special variable that represents it.
+This means, that by default there are no other restrictions on the symbolic value, other than what the said type implies.
+During the model extraction, all of these variables, that are used to represent the symbolic values are injected back into the returned object.
+
+The Figure \ref{fig:verirego-analysis-symbolic} shows a formula being returned, which not exactly correct.
+In practice the used SMT solver would return a model of this formula.
+It is only inconvenient to depict compactly in a picture.
+
+\begin{figure}
+    \label{fig:verirego-analysis-comparison}
+    \centering
+    \input{figures/verirego-analysis-comparison.tex}
+    \caption{High-level point of view for comparison of two Rego policies using the VeriRego tool.}
+\end{figure}
+
+When a symbolic input is parsed, it represents a set of concrete input documents.
+Another analysis using this property is to compate two Rego policies with each other.
+This is based on the fact, that in SMT we are able to construct quantifiers.
+Such ability implies the possibility to encode a comparison of two transformed policies.
+
+Let $P_1,P_2$ be policies specified in the Rego language and $I_{doc}$ be the symbolic input document.
+The translation into SMT creates formulas $\phi_1$ and $\phi_2$ for the policies $P_1,P_2$ respectively and a formula $\phi_{doc}$ representing the set of all possible documents encoded in $I_{doc}$.
+We can then say that $P_1$ is stricter that $P_2$ for the set $I_{doc}$, when
+$$ \forall_{d \in \phi_{doc}}: \phi_1(d) \rightarrow \phi_2(d) $$
+In the same manner we can reason about $P_2$ being stricter than $P_1$, and ultimately about thier equivalence.
+
+The Figure \ref{fig:verirego-analysis-comparison} displays a high-level point of view on this analysis.
+In this particular example \text{Policy 1} $\subseteq$ \text{Policy 1} means that \text{Policy 1} is stricter than \text{Policy 2}.
 % Theoretical limitations
 % Explanation of decisions

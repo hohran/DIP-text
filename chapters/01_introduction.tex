@@ -22,9 +22,26 @@ This makes the service much easier to maintain, scale, and improves the ability 
 Policy agents reason about rules, which are usually specified in dedicated languages.
 In this day and age, the most prevalent ones are: Rego by Open Policy Agent (OPA), Cedar, and OpenFGA.
 
+Beyond the immediate practical aspects, the motivation for proving correctness of access control policies is rooted in the increasing complexity and criticality of modern software systems.
+Access control policies often represent implicit assumptions about trust, authority, and responsibility within a system, and as such they directly influence the overall security posture of deployed services.
+When policies are evaluated dynamically and depend on structured inputs, their behavior may become difficult to predict intuitively, even for experienced developers.
+
+Traditional testing approaches are typically insufficient for validating access control logic, as they rely on a finite set of concrete examples.
+In contrast, policies are usually expected to operate correctly for an unbounded space of possible inputs, users, and environmental conditions.
+This mismatch makes it easy for subtle errors to remain undetected until they are exploited or cause unintended behavior in production.
+Formal reasoning techniques provide a way to close this gap by enabling reasoning over entire classes of inputs simultaneously.
+
+Another important aspect is the evolution of policies over time.
+Policies are rarely static; they are extended, refactored, and combined as systems grow or organizational requirements change.
+Without formal guarantees, even minor modifications can introduce contradictions, redundancies, or unintended privilege escalations.
+Proving properties such as consistency, containment, or equivalence between policies becomes increasingly valuable in such settings.
+
+Finally, expressing policies in a formal logical framework enforces precision.
+Ambiguities that are acceptable in informal descriptions must be resolved explicitly, which often exposes hidden assumptions or design flaws.
+In this sense, the process of proving correctness is not only a verification task, but also a means of improving the clarity, robustness, and long-term maintainability of access control policies.
+
 This work focuses on a analysis of policies specified in the Rego policy language.
 To do this, each policy is converted into a \emph{Satisfiability modulo theories} (\emph{SMT}) formula.
 The conversion to this state should allow us to reason over these policies more generally and efficiently, using a dedicated \emph{SMT solver}, such as Z3.
 For example one could ask, whether rules of one policy are fully contained in another one.
 Another relevant case is to test policies symbolically, i.e., not on concrete examples, but on a possibly infinite set of examples at once.
-

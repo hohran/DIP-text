@@ -17,7 +17,7 @@
     \draw[->,thick]
         (client) edge node[e] {\small \textit{Request/Event}} (service)
         (service) edge[bend left] node[e] {\small \textit{Query (JSON)}} (OPA.north west)
-        (OPA) edge[bend left] node[e] {\small \textit{Query (JSON)}} (service)
+        (OPA) edge[bend left] node[e] {\small \textit{Response (JSON)}} (service)
         (policy) edge (OPA)
         (data) edge (OPA)
         ;

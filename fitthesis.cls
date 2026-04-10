@@ -1244,7 +1244,7 @@ Management}{\@fit@EN}%
 %
 % Czech quotes are default
 %
-\csdoublequoteson
+% \csdoublequoteson
 
 % Zarovnání v seznamu typu description 
 % Alignment in description list
