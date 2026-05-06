@@ -19,10 +19,10 @@
 %%% Transformation of incrementally more complex constructs
 As the analysis of Rego policies leverages the power of SMT solving, it is crucial to have a function for transforming policy constructs into corresponding SMT statemenents.
 This section will provide theoretical information about this process.
-Due to the complexity and expressiveness of the language, the description will start with covering simple scenarios and gradually introduce new constructs for this procedure to support.
+Due to the complexity and expressiveness of the language, the description will start with covering simple scenarios and gradually introduce new constructs for this procedure to support, according to the structure of chapter \ref{ch:form}.
 It is important to note that not all Rego statemenents are fully representable in SMT, which we will discuss in the last section of this chapter (\todo{re}).
 
-\section{Variables and literals}
+\section{Variables and Literals}
 
 Since variables and literals stand in the core of all policies, we will first look at their representation and reason about its effectiveness.
 
