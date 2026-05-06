@@ -45,6 +45,60 @@
 
 \usepackage{url}
 \usepackage{tikz}
+\usepackage[most]{tcolorbox}
+
+% listings for code
+\usepackage{listings}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinelanguage{Rego}{
+  morekeywords={package,import,default,not,else,if,contains,every,in,true,false,null,some},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]"
+}
+\lstdefinelanguage{SMT}{
+  morekeywords={},
+  sensitive=true,
+  morecomment=[l]{\;},
+  morestring=[b]"
+}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries\color{blue!70!black},
+  commentstyle=\itshape\color{gray},
+  stringstyle=\color{teal},
+  frame=single,
+  breaklines=true,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  xleftmargin=2em,
+  keepspaces=true,                 
+}
+
+% \lstdefinestyle{mystyle}{
+%     backgroundcolor=\color{backcolour},   
+%     % commentstyle=\color{codegray},
+%     % keywordstyle=\color{black},
+%     % numberstyle=\tiny\color{codegray},
+%     % stringstyle=\color{codegreen},
+%     % basicstyle=\ttfamily\footnotesize,
+%     % breakatwhitespace=false,         
+%     % breaklines=true,                 
+%     % captionpos=b,                    
+    % keepspaces=true,                 
+%     % % numbers=left,                    
+%     % numbersep=5pt,                  
+%     % showspaces=false,                
+%     % showstringspaces=false,
+%     % showtabs=true,                  
+%     % tabsize=2
+% }
+%
+% \lstset{style=mystyle}
 
 % =======================================================================
 % "hyperref" package create clickable links in pdf if you are using pdflatex.
@@ -249,8 +303,11 @@ Při tvorbě odevzdaného programového kódu jsem využíval nástroj Github Co
   % ----------------------------------------------
   \ifenglish
     \input{chapters/01_introduction}
-    \input{chapters/02_theory}
+    \input{chapters/02_theory_new}
+    \input{chapters/03_rego_formalization}
+    \input{chapters/03_type_analysis}
     \input{chapters/03_algorithm}
+    \input{chapters/04_algorithm_new}
     \input{chapters/04_implementation}
   \fi
   

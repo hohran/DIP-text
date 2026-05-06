@@ -1,0 +1,297 @@
+% \chapter{Analysis of Rego Policies}
+%
+% % In this chapter
+% %% Theoretical decription of the analysis
+% %% First SMT representation of policies
+% %% Possible analysis and ways to encode them into SMT
+%
+% The Analysis of Rego Policies in this work operates on their encoding in SMT.
+% We will first describe a procedure for transforming Rego into SMT and reason about the correctness and efficiency of its product.
+% After that, section \todo{ref} will list possible analysis that such encoding enables.
+
+
+\chapter{SMT Representation of Policies}
+\label{ch:04}
+
+% In this section
+%% Why we transform to SMT
+%% How will this chapter be structured
+%%% Transformation of incrementally more complex constructs
+As the analysis of Rego policies leverages the power of SMT solving, it is crucial to have a function for transforming policy constructs into corresponding SMT statemenents.
+This section will provide theoretical information about this process.
+Due to the complexity and expressiveness of the language, the description will start with covering simple scenarios and gradually introduce new constructs for this procedure to support.
+It is important to note that not all Rego statemenents are fully representable in SMT, which we will discuss in the last section of this chapter (\todo{re}).
+
+\section{Variables and literals}
+
+Since variables and literals stand in the core of all policies, we will first look at their representation and reason about its effectiveness.
+
+\subsection{Atomic values}
+
+Rego allows for atomic values of these types:
+\begin{itemize}
+  \item String
+  \item Number - natural numbers (32 bit) and decimals (float by IEEE 754)
+  \item Boolean - either true or false
+  \item Null - special type for the \texttt{null} value
+\end{itemize}
+
+From these types, both Strings and Booleans are strictly representable in SMT-LIB2 and Null type can be simply substituted by a custom type holding only one value.
+As it was described in section \ref{sec:smt}, SMT-LIB2 supports both BitVector and Float sorts, which could be unionized with a custom type and this directly match the Rego Number type.
+
+On the other hand, the set of policy examples \todo{cite} provided by the Rego reference does not include any decimal values, and thus my supervisor for this work and I decided, that support for this type is expendable.
+% Furthermore, the direct BitVector representation brings up 
+Furthermore, with the policy as code principle stresses the readability of rules, it is expected for them not to rely on obscure representation-based behaviours such as bit overflow.
+For this cause, we decided that translating natural number in Rego into the SMT-LIB2 Int values is also sufficient.
+% and also easily interchangeable with the BitVector kind.
+For the rest of this paper, we will thus use the transformation of the Rego Number type into the SMT-LIB2 Int, as it is more clear to understand than the latter option.
+
+% maybe add some sort of table which shows, how different values are mapped.
+% for example 1 -> 1, "ahoj" -> "ahoj", null -> ONull
+With Rego not having a strong type system, which allows variables to be for example either Int or String, we will (for now) encode their type in SMT as a unionizing sort over all atomic possibilities.
+This brings us to the sort \texttt{OTypeD0} defined as:
+
+% TODO: maybe rename OTypeD0 as OTypeAtom
+\begin{lstlisting}
+(declare-datatypes ()
+  ((OTypeD0
+    (OString (str String))
+    (ONumber (num Int))
+    (OBoolean (bool Boolean))
+    ONull
+  )))
+\end{lstlisting}
+
+For custom defined SMT datatypes we use the prefix "O".
+The suffix "D0" implies the depth equal to $0$, whose reason will become more clear with the support of more complex types.
+With variables being of this sort, we can assign them any of the said atomic types.
+
+\subsection{Objects}
+
+As OPA operates primarily on key-value collections (as described in section \ref{sec:opa}), the SMT support for objects becomes the most crucial part of the whole analysis.
+The main problem with objects is that they can hold values, that are also objects, which causes the depth to be unbounded.
+Such characteristic can be represented with either a recursive datatype, or set of datatypes of various depths, going up to the maximal depth appearing in the input policy.
+In this work, we will focus mainly on the latter option, since it is more easily transformable into the theory of uninterpreted function, which SMT solvers can efectively reason about.
+
+% Rego objects != JSON objects
+%% in rego: keys can be of any type
+%% in JSON: keys only strings
+
+\subsubsection{Unnested objects}
+
+As mentioned in \todo{ref}, SMT-LIB2 offers an Array sort, which maps keys of one kind to values of another kind.
+If we only considered unnested Rego objects, such as
+\begin{equation}
+  \label{03:eq:simple-object}
+  \{ "a": 1, "b": true \}
+\end{equation}
+we could possibly interpret them in SMT with construct
+\begin{center}
+  \texttt{Array OTypeD0 OTypeD0}
+\end{center}
+
+In adition, OPA communicates with JSON objects, whose keys can only be Strings.
+This creates an inconsistency between the inner representation of values in Rego and its JSON output, that is very treaturous to deal with using a formal verification tool.
+For this, we allow objects to be represented with more simplified sort
+\begin{center}
+  \texttt{Array String OTypeD0}
+\end{center}
+
+The problem with this solution in our current SMT representation is that Arrays are total mappings, which means that every possible key has a value.
+This property requires that we need to explicitly specify for some keys, that they do not have a corresponding value, which is equivalent to assigning them a value of a special sort, which will be used only for undefined values.
+With this need in mind we will update our current SMT sort for atomic values:
+
+\begin{lstlisting}[language=lisp]
+(declare-datatypes ()
+  ((OTypeD0
+    (OString (str String))
+    (ONumber (num Int))
+    (OBoolean (bool Bool))
+    ONull
+    OUndef)))
+\end{lstlisting}
+
+We can now leverage constant operators and store operations provided by state-of-the-art SMT solvers, such as \ziii, to correctly represent on object with only certain keys set.
+Going back to the simple example \ref{03:eq:simple-object}, its transformation into SMT could yield a representation such as:
+\begin{lstlisting}[language=lisp]
+(store
+  (store
+    (as-const (Array OTypeD0 OTypeD0) OUndef)
+    "a" (ONumber 1))
+  "b" (OBoolean true))
+\end{lstlisting}
+
+  This construct firstly creates an empty object with the \texttt{as-const} expression, i.e., an object whose keys all map to value \texttt{OUndef}.
+  The \texttt{store} operation firstly assign this empty object key "a" mapping to Integer value 1, and then, with the top-level function, mapping key "b" to the Boolean value \texttt{true}.
+
+\subsubsection{Nested objects}
+
+We already mentioned, that this work will prefer specifying a separate sort for each possible depth of objects over using a recursive declaration.
+Such sort of depth $N$ has to hold at least these two requirements:
+  \begin{enumerate}
+    \item to have its keys hold value of lower depth,
+    \item to be tested, whether it is undefined.
+  \end{enumerate}
+For the first requirement, a small problem arises from the fact, that elements of an object do not explicitly share the same depth, for example with this object such as:
+\begin{center}
+  \{ "D0": 1, "D1": \{ "foo": "bar" \} \}.
+\end{center}
+If we were to enumerate all the lower depths of every new kind, the output SMT representation might simply be populated with loads of excess declarations.
+  Other option is to allow for \texttt{OTypeD<N>} to be either an object of values with kind \texttt{OTypeD<N-1>}, or to be interpreted strictly as a value of this kind.
+  This way, the datatype declaration would consist of at least two interpretations, described with the following SMT:
+
+\begin{lstlisting}[language=lisp]
+(declare-datatypes ()
+  ((OTypeD<N>
+    (Wrap<N> (wrap<N> OTypeD<N-1>))
+    (OObj<N> (obj<N> (Array String OTypeD<N-1>)))
+  )))
+\end{lstlisting}
+
+  For the second requirement, we can either create a level-specific undefined values (i.e., \texttt{OUndefD2}), or have a way to interpret \texttt{OTypeD<N>} as the atomic \texttt{OTypeD0} which has this feature.
+  Compared by the length of code added to the kind declaration, both of the suggested solution are equal.
+  For testing whether a certain value is undefined, the level-specific OUndef declaration yields smaller output SMT, since the other option needs to firstly specify that the value is interpreted as atomic and then test it.
+  Even still, having unified kind for undefined values allows for quantified tests over object elements.
+  For example, checking emptiness of object $o$ of elements $e$ of depth $N$ could be translated as evaluating the following predicate:
+  $$
+  \neg\exists_{e \in o}: (\texttt{is-OUndef} \hspace{1mm} (\texttt{Atom}_N \hspace{1mm} e))
+  $$
+  
+  This statement is much more complicated in objects with level-specific undefined values, whose elements have different depth.
+  For example, let $O_3$ be an object of depth $3$, and $O_1$ an object of depth $1$.
+  For Rego expression
+  \begin{center}
+    $O3$["a"] := $O1$
+  \end{center}
+  our current translating procedure would yield the following SMT code:
+  \begin{center}
+    \texttt{(assert (select O3 "a" (Wrap2 O1)))}
+  \end{center}
+  The important part in this demonstration is that the value of $O_1$ stored in $O_3$ is wrapped in constructor for kind \texttt{OTypeD2}.
+  So the naively modified predicate for checking emptiness of object
+  $$
+  \neg\exists_{e \in o}: (\texttt{is-OUndef2} \hspace{1mm} e)
+  $$
+  would always be unsatisfied even if $O_1$ had value of type \texttt{OUndef1}.
+  To make this predicate correct, we would have to take into account every possible depth of element in the tested object.
+
+% isnt the option of multiple level-specific undefined values better?
+% level-specific undefined
+%% + smaller when asking for specific values
+%% - when object = { "a": a, "b": b }, and a,b have different depths, how do we determine, that this object is empty?
+
+
+  In summary, compared to the unified undefined kind, level-specific undefined values are slightly more efficient in checking specific values, but much more complex to check over quantified object elements.
+  For the rest of this paper, we will continue with using only the atomic undefined type, and thus we extend our representation of variable types of depth $N$ with a special option to extract the atomic value straight directly:
+\begin{lstlisting}[language=lisp]
+(declare-datatypes ()
+  ((OTypeD<N>
+    (Atom<N> (atom<N> OTypeD0))
+    (Wrap<N> (wrap<N> OTypeD<N-1>))
+    (OObj<N> (obj<N> (Array String OTypeD<N-1>)))
+  )))
+\end{lstlisting}
+  
+  \subsection{Arrays}
+
+  Rego supports heterogenous arrays, meaning its values do not have to hold the same type.
+  For this reason, to translate them into SMT, it is also necessary to count the maximal depth of elements of given array.
+  Like objects, arrays are collections mapping keys to values, with the exception that its keys have to be natural numbers starting from 0 and gradually increasing.
+  We can thus represent them, for elements of depth $N$, as
+  \begin{center}
+    \texttt{Array Int OTypeD<N>}
+  \end{center}
+  with adding mentioned constraints on the keys, so that given models do not have unreasonable array indexing such as with negative numbers.
+
+  As mentioned in section \todo{\ref{sec:smt}} modern SMT solvers, such as \ziii or \todo{cvc5}, also add support for special sort \texttt{Seq}, which has these constraints built in, and thus is more suitable for representing Rego arrays.
+  Representing a variable type of depth $N$ will with the support for Rego arrays look as the following:
+\begin{lstlisting}[language=lisp]
+(declare-datatypes ()
+  ((OTypeD<N>
+    (Atom<N> (atom<N> OTypeD0))
+    (Wrap<N> (wrap<N> OTypeD<N-1>))
+    (OObj<N> (obj<N> (Array String OTypeD<N-1>)))
+    (OArray<N> (arr<N> (Seq OTypeD<N-1>)))
+  )))
+\end{lstlisting}
+
+
+  \subsection{Sets}
+
+  In Rego, sets are also heterogenous collections, but their behaviour is equivalent to the SMT \texttt{Set} sort, provided by the state-of-the-art solvers.
+  The only important thing to note is the incompatibility of sets with JSON documents, which do not support them.
+  For this cause, after evaluating the policy, all sets have to be transformed into JSON arrays.
+  Other than that, we can simply add them to the current definition of variable types:
+\begin{lstlisting}[language=lisp]
+(declare-datatypes ()
+  ((OTypeD<N>
+    (Atom<N> (atom<N> OTypeD0))
+    (Wrap<N> (wrap<N> OTypeD<N-1>))
+    (OObj<N> (obj<N> (Array String OTypeD<N-1>)))
+    (OArray<N> (arr<N> (Seq OTypeD<N-1>)))
+    (OSet<N> (set<N> (Set OTypeD<N-1>)))
+  )))
+\end{lstlisting}
+
+\section{Expressions}
+
+% How can expressions look
+% references
+% basic operations
+% builtin functions
+%% mention assigning calls - plus(1,2,output)
+% local variables
+% special keywords
+%% not
+%% quantifiers - some, every
+%% contains 
+
+Previously estabilished conversion of literals and variables from Rego policy language into SMT enables transformation of expessions.
+Since Rego emphasises on expressiveness, it provides handful of different ways to form such expressions.
+
+\subsection{References}
+
+References are expressions used to access Rego collections, such as objects, arrays, or sets.
+They start with the given collection, followed by a chain of squared brackets, enclosing accessed keys, e.g.:
+\begin{center}
+  \texttt{obj["a"][0]["b"]}
+\end{center}
+If the key is a string literal, the squared brackets can be replaced by a dot followed by the literal value, resembling syntax of modern programming languages (e.g., Python, or Javascript).
+So the above example can be equivalently written as
+\begin{equation}
+  \label{04:eq-reference}
+  \texttt{obj.a[0].b}
+\end{equation}
+
+% TODO: define type analysis beforehand
+To translate a reference we use the previously defined function $\TA$ for getting types of terms.
+Starting with translation of the base collection (\texttt{obj} in the given example) and extracting its collection type value from the variable sort (with datatype members as \texttt{obj<N>}, \texttt{arr<N>}, or \texttt{set<N>}), we incrementally wrap this SMT value with selectors for each following value in the chain.
+Transforming the Rego from example \ref{04:eq-reference} could yield (based on the specific types of given collections):
+\begin{lstlisting}[language=SMT]
+(select 
+  (obj1 (seq.nth
+    (arr2 (select 
+      (obj3 obj)  ; base object obj
+      "a"))       ; obj.a
+    0))           ; obj.a[0]
+  "b")            ; obj.a[0].b
+\end{lstlisting}
+
+For a collection with depth $N$, it is also important to check the actual depth of the selected term as it does not have to equal the expected depth $N-1$.
+In this case, we need to access the lower depth interpretation with possibly chained \texttt{wrap} operators.
+Another possible transformation of the current example could be:
+\begin{lstlisting}[language=SMT]
+(select 
+  (obj1 (seq.nth
+    (arr2 (wrap3 (select  ; accessing lower depth representation
+      (obj4 obj)
+      "a"))
+    0)))
+  "b")
+\end{lstlisting}
+This code would be generated for $|\TA(obj)| = 4$ and $|\TA(obj.a)| = 2$.
+
+
+
+
+

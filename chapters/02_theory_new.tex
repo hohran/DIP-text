@@ -1,0 +1,505 @@
+\chapter{Theory, Current State}
+\label{ch:theory}
+
+% Introduction - what in this chapter
+In this chapter, we will lay down the knowledge foundation for the following text, with the main focus on the Open Policy Agent (OPA) with heavy emphasis on its Rego policy language and SMT solving.
+% Since OPA is still under active development ...
+% Since both topics are under constant development, we will include the possible limitations implied by both technologies.
+
+% Rego
+%% OPA
+%% Language specifics
+\section{Rego Policy Language}
+\label{sec:rego}
+
+% TODO: revise after the chapter is done
+This section will focus on the Rego language, used for specifying policies for \emph{Open Policy Agent} (\emph{OPA}).
+To fully understand the meaning and design choices of the language, we will firstly look into OPA.
+We will then follow with describing the syntax, semantics and the core mechanics of the language itself.
+This section is heavily dependent on the specification of OPA found in \cite{opa:web}.
+
+\subsection{Open Policy Agent}
+
+OPA is a general-purpose policy engine designed to decouple policy decision making from application logic.
+Policy decision making refers to the evaluation of conditions that determine whether actions such as access requests, configuration changes, or deployment operations should be permitted or denied.
+OPA can be integrated with diverse systems including microservices, API gateways, Kubernetes admission controls, and CI/CD pipelines.
+
+\begin{figure}
+    \label{fig:opa-query-graph}
+    \centering
+    \input{figures/opa-query-graph.tex}
+    \caption{Structure of communication between a service and OPA.}
+\end{figure}
+
+The core language used by OPA for policy expression is \emph{Rego}.
+Rego is a purpose-built declarative policy language inspired by Datalog, designed to reason over structured documents, most significantly in JSON format.
+Rego allows authors to express queries, rules, constraints, and derived values without specifying a procedural control flow.
+Because Rego is declarative, users define what constitutes a valid decision rather than how to compute it; under the hood, OPA’s evaluation engine determines an efficient execution plan for query evaluation.
+Rego’s declarative nature enables optimized evaluation and composability of policy rules.
+
+Figure \ref{fig:opa-query-graph} depicts the high-level point of view on the communication between a service and OPA.
+Client requests are transformed into queries to the OPA; we will often call these queries \emph{input} in the following text.
+The OPA then evaluates the query with respect to a policy specified in Rego and a JSON document representing the service data (e.g., list of permitted servers).
+In addition, as the process of authorizing a request (input) often heavily depends on databases connected to the service, OPA offers a way to integrate these \emph{data} into the specified policy.
+
+\subsection{Syntax}
+
+This section uses the EBNF metasyntax notation \cite{EBNF:web} briefly defined as follows:
+\begin{lstlisting}
+[]     optional (zero or one instances)
+{}     repetition (zero or more instances)
+|      alternation (one of the instances)
+()     grouping (order of expansion)
+CHAR   Unicode character
+ALPHA  ASCII characters A-Z and a-z
+DIGIT  ASCII characters 0-9
+\end{lstlisting}
+
+The Rego policy language is a high-level, declarative language with high emphasis on readability and expressiveness.
+Policies specified in this language are organized into \emph{modules}, each containing which \emph{package} it belongs to, which modules is it dependent on, and finally the actual \emph{policy}:
+\begin{lstlisting}
+module = package {import} policy
+\end{lstlisting}
+
+The policy of given module comprises of rules defining the output documents fields (\emph{variables}) or creating custom functions.
+Every rule contains a \emph{head}, which specifies the type of rule and information about it (such as the defined variable name, or list of arguments for user-defined functions), and optionally a \emph{body}, which is a set of criteria which need to be satisfied for the rule to be applied.
+Formal definition of rules is the following:
+% policy         = { rule }
+\begin{lstlisting}
+rule           = [ "default" ] rule-head { rule-body }
+rule-head      = ( ref | var ) ( rule-head-set | rule-head-obj | rule-head-func | rule-head-comp )
+rule-head-comp = [ ":=" term ] [ "if" ]
+rule-head-obj  = "[" term "]" [ ":=" term ] [ "if" ]
+rule-head-func = "(" rule-args ")" [ ":=" term ] [ "if" ]
+rule-head-set  = "contains" term [ "if" ] | "[" term "]"
+rule-args      = term { "," term }
+rule-body      = [ "else" [ ":=" term ] [ "if" ] ] "{" literal "}" | literal
+\end{lstlisting}
+
+With the above syntax, rules can be (more specifically) classified into:
+\begin{itemize}
+  \item \emph{default rules},
+  \item \emph{variable definitions},
+  \item \emph{object field definitions},
+  \item \emph{function definitions},
+  \item \emph{set field definitions}.
+\end{itemize}
+The semantics of these rules will be thoroughly described in the following section \todo{ref}.
+
+% TODO:
+% ref, term, literal
+The nonterminal \texttt{literal}, which forms rule body, is described with:
+\begin{lstlisting}
+literal   = ( some-decl | expr | "not" expr )
+some-decl = "some" term { "," term } { "in" expr }
+expr      = term | expr-call | expr-infix | expr-parens | expr-every
+\end{lstlisting}
+meaning it is either an expression (\texttt{expr}) or a declaration of existentially quantified variable (\texttt{some-decl}).
+
+Expressions can be either single terms, calls to functions\footnote{
+  When expression uses infix notation (\texttt{expr-infix}) or is parenthesised (\texttt{expr-parens}), it is always transformed into respective function calls by the internal Rego compiler.
+}, or universal quantificators (\texttt{expr-every}).
+\texttt{term}, describing values, which can appear in expressions, indexing, or as function arguments are defined as:
+\begin{lstlisting}
+term          = var | ref | scalar | array | object | set | membership
+ref           = ( var | array | object | set | expr-call ) { ref-arg }
+ref-arg       = ref-arg-dot | ref-arg-brack
+ref-arg-brack = "[" ( scalar | var | array | object | set | "_" ) "]"
+ref-arg-dot   = "." var
+\end{lstlisting}
+% | array-compr | object-compr | set-compr FIXME: should I mention comprehensions?
+
+In the syntax definition of \texttt{term}, we can find:
+\begin{itemize}
+  \item \texttt{var}: representing variable names,
+  \item \emph{collections}: \texttt{array}, \texttt{object}, and \texttt{set},
+  \item \texttt{ref}: references, usually accessing collections,
+  \item \texttt{scalar}: primitive values:
+    \begin{itemize}
+      \item \texttt{STRING}: JSON string
+      \item \texttt{NUMBER}: JSON number
+      \item \texttt{TRUE}:   JSON true
+      \item \texttt{FALSE}:  JSON false
+      \item \texttt{NULL}:   JSON null
+    \end{itemize}
+\end{itemize}
+
+% TODO: example
+\subsubsection{Example Rego Policy}
+
+% TODO: change graph.reachable for something that we can analyse
+\begin{figure}
+  \label{fig:rego}
+  \begin{lstlisting}[language=Rego,escapechar=|]
+package example
+
+import input.action.name as action |\label{fig:rego:line:import}|
+
+reachable_roles := array.concat(data.default_roles, input.roles) |\label{fig:rego:call}|
+
+user_permissions contains permission if { |\label{fig:rego:line:set-rule}|
+	some role in reachable_roles |\label{fig:rego:some_decl}|
+	some permission in data.permissions[role] |\label{fig:rego:line:ref}|
+}
+
+default allow := false |\label{fig:rego:line:default}|
+
+allow if action in user_permissions |\label{fig:rego:alias-use}|
+\end{lstlisting}
+  \caption{Example Rego program.}
+\end{figure}
+
+The figure \ref{fig:rego} ilustrates example Rego policy.
+This policy contains an \texttt{import} statement on line \ref{fig:rego:line:import}, set field definition rule on line \ref{fig:rego:line:set-rule}, default rule on line \ref{fig:rego:line:default}, and a variable definition rule on line \ref{fig:rego:alias-use}.
+Line \ref{fig:rego:line:ref} contains a \emph{quantified variable} declared over fields of \emph{reference} \texttt{data.permissions[role]}.
+
+\subsection{Semantics}
+
+% TODO: builtin functions
+
+The semantics of the Rego language is defined in terms of evaluation of rules over input data and a data store, producing a set of derived values. Evaluation is \emph{declarative}: instead of prescribing control flow, policies specify logical conditions that must hold.
+
+
+\subsubsection{Evaluation Model}
+
+A Rego policy is \emph{deterministically} evaluated with respect to:
+\begin{itemize}
+  \item \texttt{input}: a JSON document supplied at query time,
+  \item \texttt{data}: a hierarchical document composed of all loaded modules.
+\end{itemize}
+
+The result of evaluation is a set of variable bindings that satisfy the queried rule. Evaluation proceeds by searching for assignments of variables such that all expressions in a rule body are satisfied.
+
+It is very important to note, that OPA does not directly mark the given query as authorized or unauthorized.
+This action is left for the service using OPA to do, based on the returned response.
+The most common practice is to specify a \emph{permiting rule}, usually called \texttt{allow} or \texttt{permit} and authorize given query only when this value is set.
+In adition, services often specify \emph{forbiding rules}, most usually denoted with \texttt{deny}, \texttt{forbid}, or \texttt{violation}.
+These values can be either $\Bool$ or $\RegoSet{\Unknown}$ of reasons for forbiding the query and they idiomatically should take priority over permiting rules, i.e., if both permiting and forbiding values are set, the query will by denied.
+
+For example, figure \ref{fig:rego} contains a permiting rule \texttt{allow} on line \ref{fig:rego:alias-use}.
+Since there is no forbiding rule present in the policy, it is expected to authorize given query upon satisfying the conditions of this rule's body.
+
+\subsubsection{Rules and Rule Heads}
+
+Each rule defines a relation between its head and body:
+\begin{itemize}
+  \item If the rule body is satisfied, the rule head is considered \emph{true} or produces a value.
+  \item Rules with the same head are \emph{incrementally defined}, i.e., their results are combined.
+\end{itemize}
+
+Depending on their form, rule heads have the following semantics:
+\begin{itemize}
+  \item \emph{Value rules}: assign a value to a variable.
+  \item \emph{Boolean rules}: assign \true to a variable (special case of value rule).
+  \item \emph{Object rules}: define key--value pairs of an object.
+  \item \emph{Set rules}: accumulate elements into a set.
+  \item \emph{Function rules}: define mappings from arguments to values.
+\end{itemize}
+
+Default rules provide fallback values used when no other rule produces a result.
+
+Looking at the example given in figure \ref{fig:rego}, set rule is present on line \ref{fig:rego:line:set-rule}, value rule on line \ref{fig:rego:call}, boolean rule on line \ref{fig:rego:alias-use}, and default rule on line \ref{fig:rego:line:default}.
+
+\subsubsection{Rule Bodies}
+
+A rule body is a conjunction of literals, which all have to be defined and yield a value distinct of \false\footnote{
+  Literals present in rule body are considered \true even if they evaluate to $0$ or $$\Null$$.
+}.
+Multiple rule bodies are evaluated in order.
+
+% TODO
+\subsubsection{Expressions}
+
+Expressions are evaluated as follows:
+\begin{itemize}
+  \item \texttt{term}: evaluates to a value,
+  \item \texttt{expr-call}: invokes a built-in or user-defined function,
+  \item \texttt{expr-infix}: syntactic sugar for function calls,
+  \item \texttt{expr-parens}: grouping construct,
+  \item \texttt{expr-every}: universal quantification over a domain.
+\end{itemize}
+
+Expression evaluation may bind previously unbound variables, contributing to the overall solution.
+
+% TODO: example
+\subsubsection{References}
+
+References are evaluated by traversing structured values:
+\begin{itemize}
+  \item Dot notation accesses object fields with fixed keys.
+  \item Bracket notation allows dynamic access using computed keys or indices.
+  \item If any step of a reference is undefined, the entire expression is undefined.
+\end{itemize}
+When evaluating references, it is also possible, that the reference prefix matches a module name, in which case the \emph{accessor} following such prefix references a variable from specified module.
+
+% TODO
+\subsubsection{Collections}
+
+Rego supports three collection types with distinct semantics:
+\begin{itemize}
+  \item \texttt{array}: ordered, indexable sequence,
+  \item \texttt{object}: mapping from keys to values,
+  \item \texttt{set}: unordered collection of unique elements.
+\end{itemize}
+
+Membership expressions test whether a value belongs to a collection and may bind variables during evaluation.
+
+% TODO: example
+\subsubsection{Quantification}
+
+Rego provides explicit constructs for quantification:
+\begin{itemize}
+  \item \texttt{some} introduces existentially quantified variables,
+  \item \texttt{every} expresses universal quantification.
+\end{itemize}
+
+These constructs control how variables range over collections.
+
+\subsubsection{Determinism and Evaluation Strategy}
+
+Although Rego is declarative, its evaluation is:
+\begin{itemize}
+  \item \emph{order-independent} for most rules,
+  \item \emph{deterministic} given fixed input and data,
+  \item based on a search strategy that explores variable bindings.
+\end{itemize}
+
+Implementations may reorder expressions for optimization, provided the semantics is preserved.
+
+\medskip
+
+The described semantic principles form the basis for understanding how Rego policies are evaluated and how results are derived from input data.
+
+
+
+\section{SMT Solving}
+\label{sec:smt}
+
+% TODO
+%% What is complete, sound, ...
+% Array theory
+% Unint func theory
+
+This section will describe the details behind SMT which the work of this thesis is laid upon.
+This involves looking at the basic functionality of SMT and a quick dive into the inner workings that imply the possible limitations.
+In adition, I will describe the \ziii SMT solver which is used in the implementation of this work to evaluate the SMT-LIB formulae.
+Since this solver allows reasoning over theories, which are not explicitly in the SMTLIB2 standart and which are essential to this work, they will also be discussed.
+
+\subsection{Preliminaries}
+
+\paragraph{SAT Solving.}
+The \emph{Boolean Satisfiability Problem}, categorized as an \emph{NP-complete} problem, decides whether given propositional formula $\phi$ has a solution.
+In such case, we say that $\phi$ is \emph{satisfiable}, which can also be denoted with $\sat$.
+Otherwise, this formula is marked as $\unsat$.
+In computer science, deciding this problem is called \emph{SAT solving}, and tools for its automation are called \emph{SAT solvers}.
+
+%% TODO decidability?
+
+\paragraph{Satisfiability Modulo Theories.}
+The defining problem of \emph{Satisfiability Modulo Theories} (\emph{SMT}) is checking whether a given (closed) logical formula $\phi$ is satisfiable, in the context of some background theory $\T$ which constrains the interpretation of the symbols used in $\phi$.\cite{smt:sm-theories, smt:first-ord-logic}
+Technically, the SMT problem for $\phi$ and $\T$ is the question of whether there is a model of $\mathcal{T}$ that makes $\phi$ true.
+\emph{SMT solver} is a software that implements a procedure for satisfiability modulo some given theory. 
+
+What sets apart SMT from general automated deduction is that the background theory $\mathcal{T}$ need not be finitely or even first-order axiomatizable, and that specialized inference methods are used for each theory.
+By being theory-specific and restricting their language to certain classes of formulas (such as, typically but not exclusively, quantifier-free formulas), these specialized methods can be implemented in solvers that are more efficient in practice than general-purpose theorem provers.
+
+%% SMT-LIB, theories, soundness, completeness
+\subsection{SMT-LIB}
+
+% TODO: projit
+
+The \smtlib Standard is an international initiative and specification that defines a common language and infrastructure for interacting with SMT solvers.
+\smtlib aims to facilitate research, development, comparison, and benchmarking of SMT solvers by providing rigorous definitions of languages, theories, and interfaces used in the automated reasoning community.
+The initiative also supports a large library of benchmark problems written in a standardized format.
+
+The \smtlib Standard Version defines a formal language for writing logical formulas, specifying background theories, defining logics, and interacting with SMT solvers via a command-based interface. The standard’s objectives include: providing a common input/output language for SMT solvers; defining a standard set of sorts, functions, and predicates for background theories; and supporting structured benchmark libraries for experimental evaluation.
+
+SMT-LIB’s language is based on many-sorted (typed) first-order logic with equality, where terms and formulas are strongly typed and structured according to defined sorts such as Bool, Int, and user-defined or theory-specific sorts.
+Scripts in the SMT-LIB language consist of commands that declare symbols, assert formulas, query solver actions (e.g., \texttt{check-sat}), and interact with solver responses.
+SMT-LIB’s syntax uses S-expressions similar to Lisp to represent terms and commands.
+
+The standard separates concerns into clearly defined components:
+\begin{itemize}
+    \item \emph{Formula language} — a typed logical language for defining SMT problems.
+    \item \emph{Theory declarations} — definitions of sorts and function symbols that form the semantic basis for logical theories (e.g., integers, arrays, bit vectors, strings).
+    \item \emph{Logic specifications} — combinations of theory signatures and syntactic restrictions that define classes of admissible formulas.
+    \item \emph{Command language} — a textual interface for communicating with SMT solvers, including declaring symbols, asserting constraints, checking satisfiability, and retrieving models.
+\end{itemize}
+
+The standard also maintains a catalog of benchmark problems in the SMT-LIB format, grouped by logics and used in community-driven evaluations such as SMT-COMP.
+These benchmarks support the systematic assessment of solver performance and feature diverse problem classes across background theories.
+
+The SMT-LIB standard distinguishes between \emph{basic} theories and \emph{combined} theories.
+Basic theories, such as the theory of real numbers, the theory of arrays, the theory of fixed-size bit vectors and so on, are those explicitly defined in the SMT-LIB catalog.\footnote{The catalog of basic theories in SMT-LIB is avaliable at \url{https://smt-lib.org}.}
+Combined theories are defined implicitly in terms of basic theories by means of a general modular combination operator.
+The difference between a basic theory and a combined one in SMT-LIB is essentially operational.
+Some SMT-LIB theories, such as the theory of finite sets with a cardinality operator, are defined as basic theories, even if they are in fact a combination of smaller theories, because they cannot be obtained by modular combination.
+
+%% TODO quantifiers
+
+\subsection{Z3}
+
+\textit{The information about \ziii is taken from \cite{z3} and \cite{z3:web}.}
+
+\ziii is SMT solver from Microsoft Research with its first external release dating back to 2007.
+Its main purpose is solving problems that arise in software verification and analysis.
+\ziii integrates support for a variety of theories, with the most prevalent for this work being linear integer arithmetic, strings, and arrays.
+
+\ziii is implemented in C++ and it is designed to be highly extensible, thanks to its
+modularity. From a high-level point of view, \ziii integrates:
+\begin{itemize}
+    \item 
+        \emph{Core theory SAT solver.} Davis–Putnam–Logemann–Loveland (DPLL) algorithm based solver of propositional logic. 
+        This solver is used to handle equalities and uninterpreted functions.
+    \item 
+        \emph{Satellite solvers.}
+        Specialized theory solvers.
+    \item 
+        \emph{E-matching abstract machine.}
+        This component finds instantiations of quantified formulas that lead to a satisfiable solution.
+\end{itemize}
+
+\begin{figure}
+    \label{fig:z3-system-arch}
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/z3-system-arch.png}
+    \caption{System architecture of Z3.}
+\end{figure}
+
+A schematic overview of the structure of \ziii is shown in Figure~\ref{fig:z3-system-arch}.
+Essential components of \ziii are then described as follows:
+
+\paragraph{Input.}
+It is possible to interact with \ziii using either a textual format or a binary API.
+As mentioned in \cite{z3:web} the textual input can appear in several different forms with the most notable one being SMTLIB2 format, which uses a LISP-like syntax.
+Programmatic interaction with this tool is possible through an API from Python, C, C++, Go, Java, and other languages.
+
+\paragraph{Simplifier.}
+To offer the maximal performance, input formulas are first simplified in an incomplete, but efficient process.
+The simplify a formula, this component applies standard algebraic reduction rules.
+For example $p \land true$ can be reduced to just $p$.
+In this process, the simplifier even tries to identify equational definitions (such as $x = 4$) within a context and using given definition, it then reduces the remaining formula.
+For example, $x = 4 \land q(x)$ can be this way reduced to $x = 4 \land q(4)$.
+
+\paragraph{Compiler.}
+This component takes a simplified abstract syntax tree representation of the input formula and converts it into a different data structure.
+Such data structure comprises a set of clauses and congruence-closure nodes.
+
+\paragraph{Atoms.}
+Atoms, or atomic formulas, are formulas, which cannot be further decomposed into simpler logical components.
+Atoms can be either equalities or theory specific atoms (for instance an arithmetical inequality).
+
+\paragraph{Congruence Closure Core.}
+The congruence closure core receives truth assignments to atoms from the SAT solver.
+Such asserted equalities are then propagated using a data structure called E-graph, with nodes in such a graph pointing to one or more theory solvers.
+A merge of two nodes is propagated to all theory solvers pointed to by the given nodes.
+The core also propagates the effects of the theory solvers.
+Such effects can range over inferred equalities to assignment of atoms to true or false.
+In the case of non-convex theories (i. e., theories for which quantifier elimination and other automated reasonings are complicated or impossible), the theory solvers can also produce fresh atoms.
+
+\paragraph{Theory Solvers.}
+\ziii’s ability to solve constraints of a specific theory comes from its integration with a solver for given theory.
+These specialized solvers are called theory solvers or satellite solvers.
+As shown in the Figure \ref{fig:z3-system-arch}, solvers are used to produce new atoms for given assignment from the \ziii core, i.e., the congruence closure core.
+
+\paragraph{E-matching Engine.}
+This engine is used reasoning over quantifiers, where \ziii combines a well known approach with new algorithms described in \cite{z3:e-match}.
+In this process, it operates over the E-graph data structures and passes generated clauses to the SAT solver.
+
+\paragraph{SAT Solver.}
+\ziii leverages the power of state-of-the-art SAT solver which integrates standard search pruning methods.
+It is used to control boolean case splits generated by the \ziii core (sometimes with the extra step of E-matching).
+
+\gap
+
+The components of \ziii offer a special set of tools and techniques which help the SMT
+solver stand out amongst others. The most significant being:
+
+\paragraph{Deleting Clauses.}
+During quantifier instantiation, clauses containing new atoms are as a side-effect produced into the search space.
+When such clause is useless in closing branches, it is garbage collected together with its atoms and terms.
+Conflict clauses are not deleted, but retained as a side-effect.
+
+\paragraph{Relevancy Propagation.}
+In practice, several atoms appearing in a goal of an SMT solver are irrelevant, or so called \emph{don’t cares}.
+For expensive theories, \ziii ignores such atoms and inference rules.
+To distinguish relevant atoms from don’t cares, \ziii uses algorithm described in \cite{z3:rele}.
+
+\paragraph{Model Generation.}
+\ziii has the ability to produce models as part of the output.
+Such models assign values to the constants in the input and generate partial function graphs for predicates and function symbols.
+
+\gap
+
+\ziii has estabilished itself as a state-of-the-art SMT solver since its release in 2007.
+It has remained with this title to this day, because of his stability, efficiency and modularity.
+It also supports a variety of non-standart theories, such as Array theory.
+For these reasons, we have decided to focus the SMT code generation presented in the next chapters onto it.
+
+\subsection{Supported Theories in Z3}
+
+Even with its emphasis on modularity and ease of extension, \ziii supports most of the commonly used theories out-of-the-box.\footnote{
+  The list of all supported theories is interactively presented at \url{https://microsoft.github.io/z3guide/docs/theories/Arithmetic}, which was the main source for this passage.
+}
+The most relevant theories to this work are:
+
+\paragraph{Uninterpreted Functions.}
+This term refers to functions that do not belong to the signature of any specific theory, and whose behavior is determined solely by the constraints imposed on their outputs.
+Constants are commonly declared as uninterpreted functions with no arguments.
+In \smtlib, such declaration looks as the following:
+
+\begin{center}
+    \fbox{\text{(declare-fun x () Int)}}
+\end{center}
+which denotes a variable $x$ of the builtin integer type.
+
+\paragraph{Arithmetic.}
+\ziii provides built-in support for integers (\texttt{Int}) and real numbers (\texttt{Real}).
+These correspond to their mathematical representations and are not limited by any fixed bit-width.
+Basic arithmetic operators are available using standard notation such as $+, -, *,$ etc.
+For integer constants $a, b, c$, the relation $a < b + c$ is expressed as:
+\begin{center}
+    \fbox{\text{(assert (< a (+ b c)))}}
+\end{center}
+Note that function and operator applications follow a prefix notation.
+
+\paragraph{Bit-vectors.}
+Bit-vectors represent numerical values as fixed-width sequences of bits, reflecting their representation in modern computer systems.
+Unlike most programming languages, \ziii does not distinguish between signed and unsigned values at the level of declaration, but instead provides different operations for each interpretation.
+The bit-width does not need to be a power of two; any positive integer is allowed.
+Bit-vector operations typically use the prefix \texttt{bv}, and constants are commonly written in binary (with prefix \texttt{\#b}) or hexadecimal (with prefix \texttt{\#x}) form.
+For example:
+\begin{center}
+    \fbox{\text{(assert (= \#x10 (bvadd \#x0a \#x06)))}}
+\end{center}
+expresses the equality between $16$ and $10 + 6$ in an 8-bit representation.
+
+\ziii also supports the \texttt{Float} type according to the IEEE standard.
+Operations in this domain are prefixed with \texttt{fp.}, such as \texttt{fp.add}, and are typically followed by a rounding mode specification.
+Many algebraic properties that hold for integers, reals, or bit-vectors—such as associativity of addition—do not necessarily hold for floating-point arithmetic.
+
+
+\paragraph{Strings.}
+Z3 provides support for strings, including standard operations such as concatenation, length computation, substring search, and character access.
+These operations are available under the \texttt{str.} prefix.
+For example, enforcing that two strings $a$ and $b$ have equal length can be written as:
+\begin{center}
+    \fbox{\text{(assert (= (str.len a) (str.len b)))}}
+\end{center}
+Regular expressions can be manipulated using operations with the \texttt{re.} prefix.
+
+\subsubsection{Arrays.}
+In SMT, an array is viewed as a total function from index sort $\tau_I$ to value sort $\tau_V$.
+Intuitively, an array assigns a value $e \in \tau_E$ to every index $i \in \tau_I$.
+
+Arrays support the basic operations \texttt{select/2} and \texttt{store/3} for reading and writing, respectively.
+These operations are defined by the standard McCarthy axioms\todo{ref}:
+\begin{itemize}
+\item $\text{select(store(A,i,v),i)} = v$
+\item $i \neq j \implies \text{select(store(A,i,v),j)} = \text{select(A,j)}$
+\item $(\forall_i: \text{select(A,i)} = \text{select(B,i)}) \implies A = B$
+\end{itemize}
+Additionally, constant arrays — where every key maps to the same value $v$ — can be defined using the function $K$:
+$$\forall_i: \text{select(K(v),i)} = v$$
+which is provided by \ziii by the \texttt{as const/2} operation, which takes the array type and a default value as arguments.
+

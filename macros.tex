@@ -1,4 +1,6 @@
+%%%% Tools %%%%
 \newcommand{\ziii}{\textsc{Z3}\xspace}
+\newcommand{\cvcv}{\textsc{cvc5}\xspace}
 \newcommand{\rego}{\textsc{Rego}\xspace}
 \newcommand{\cedar}{\textsc{Cedar}\xspace}
 \newcommand{\openfga}{\textsc{OpenFGA}\xspace}
@@ -8,3 +10,71 @@
 \newcommand{\T}{\mathcal{T}}
 
 \newtheorem{example}{Example}
+
+\newcommand{\hs}{\hspace{0.5cm}}
+
+\newcommand{\TA}{\mathsf{F}} % function of type analysis
+
+\newcommand{\Holds}{\gamma}
+
+\newcommand{\Nat}{\mathbb{N}}
+
+\newcommand{\Vars}{\mathcal{V}}
+\newcommand{\Vals}{\mathbb{V}}
+\newcommand{\Terms}{\mathbb{X}}
+\newcommand{\Funs}{\mathbb{F}}
+\newcommand{\Types}{\mathbb{T}}
+\newcommand{\Rules}{P}
+\newcommand{\Inc}{\Rules_{inc}} % incremental rules TODO
+\newcommand{\Comp}{\Rules_{comp}} % complete rules TODO
+
+\newcommand{\Rule}{\rho}
+\newcommand{\Def}{\delta}
+
+\newcommand{\sat}{\mathsf{SAT}}
+\newcommand{\unsat}{\mathsf{UNSAT}}
+
+\newcommand{\smtlib}{\texttt{SMT-LIB2}}
+
+\newcommand{\true}{\texttt{true}\xspace}
+\newcommand{\false}{\texttt{false}\xspace}
+
+\newcommand{\Unknown}{\mathsf{unknown}}
+\newcommand{\Undef}{\mathsf{undef}}
+\newcommand{\Bool}{\mathsf{bool}}
+\newcommand{\Int}{\mathsf{int}}
+\newcommand{\Str}{\mathsf{string}}
+\newcommand{\Null}{\mathsf{null}}
+\newcommand{\FnT}{\mathsf{fn}}
+\newcommand{\RegoSet}[1]{\mathsf{set}[{#1}]}
+\newcommand{\Array}[1]{\mathsf{array}[{#1}]}
+\newcommand{\Obj}[1]{\mathsf{object}\{#1\}}
+\newcommand{\ObjPM}[2]{\mathsf{object}\{#1\}^{#2}}
+\newcommand{\Union}[1]{\textstyle\bigcup\!\{#1\}}
+\newcommand{\ty}{\tau}
+\newcommand{\typof}{\Gamma}
+\newcommand{\schema}{S}
+\newcommand{\params}{P}
+\newcommand{\pkg}{\pi}
+\newcommand{\vdashT}{\;\vdash_{\!\mathsf{T}}\;}
+\newcommand{\vdashE}{\;\vdash_{\!\mathsf{E}}\;}
+\newcommand{\vdashR}{\;\vdash_{\!\mathsf{R}}\;}
+\newcommand{\leqT}{\sqsubseteq}
+\newcommand{\ltT}{\sqsubset}
+\newcommand{\canon}{\mathsf{canon}}
+\newcommand{\gettype}{\mathsf{getType}}
+\newcommand{\reftype}{\mathsf{refType}}
+\newcommand{\pathtype}{\mathsf{pathType}}
+\newcommand{\dom}{\mathrm{dom}}
+\newcommand{\verirego}{\textsc{VeriRego}}
+
+%% ---------- theorem environments ----------
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{remark}{Remark}
+
+\newcommand{\inferrule}[2]{%
+  \dfrac{\begin{array}{@{}c@{}} #1 \end{array}}{#2}}

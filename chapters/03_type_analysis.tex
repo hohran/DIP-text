@@ -1,0 +1,397 @@
+% \chapter{Type Analysis}
+%
+% One of the main challenges of the analysis of Rego policies is its dynamic type system, which contrasts the static typing of modern SMT solvers.
+% To create correct models of the policies, we 
+%
+% To effectively and correctly create a SMT model of policy specified in Rego language, it is important to infer datatypes of appearing values, as precisely as possible.
+% In this chapter, I describe a set of rules followed by the type analysis, which creates a function $\TA$, mapping every value to its corresponding type.
+% % This chapter will be heavily reliant on section \todo{ref} defining the type system of Rego.
+%
+% \section{Type System of Rego}
+%
+% The set of \emph{Rego types} $\mathbb{T}$ is defined by the grammar:
+% \begin{align*}
+% \ty \;::=\; & \Str \mid \Int \mid \Bool \mid \Null \mid \RegoSet \mid \Unknown \\
+%    \mid\;   & \Array{\ty} \\
+%    \mid\;   & \Obj{f_1{:}\ty_1, \ldots, f_n{:}\ty_n} \\
+%    \mid\;   & \ty_1 \cup \cdots \cup \ty_m
+% \end{align*}
+% The intended meaning is standard:
+% \begin{itemize}
+%   \item \emph{Atomic types} $\Str, \Int, \Bool, \Null, \RegoSet$ correspond to JSON primitives and Rego sets.
+%   \item $\Array{\ty}$ is a possibly \emph{heterogeneous} array whose elements all have type $\ty$.
+%   \item $\Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}$ is an \emph{object type} with fields $f_i$ typed $\ty_i$.
+%     Object types may additionally allow \emph{additional properties}, recorded by a Boolean flag; we omit this detail in the grammar for brevity.
+%   \item $\ty_1 \cup \cdots \cup \ty_m$ is a \emph{union} type, modelling values that may inhabit any of the member types.
+%   \item $\Unknown$ is a \emph{placeholder} type used when no information is available yet; it is the least element of the precision order.
+% \end{itemize}
+%
+% \section{Type Lattice}
+% \label{sec:lattice}
+% %%=============================================================
+%
+% \subsection{Precision Order}
+%
+% \begin{definition}[Precision order $\leqT$]
+% \label{def:precision}
+% The precision order $\leqT$ on $\mathbb{T}$ is the smallest preorder satisfying:
+% \begin{enumerate}
+%   \item $\Unknown \leqT \ty$ for all $\ty \in \mathbb{T}$.
+%   \item $\ty \leqT \ty$ (reflexivity).
+%   \item $\Array{\ty} \leqT \Array{\ty'}$ iff $\ty \leqT \ty'$.
+%   \item $\Obj{f_i{:}\ty_i} \leqT \Obj{g_j{:}\ty_j'}$
+%         iff $\{g_j\} \subseteq \{f_i\}$
+%         and $\ty_{g_j} \leqT \ty_{g_j}'$ for all $j$.
+%         (More fields, or more precise field types, is more precise.)
+%   \item For unions: $(\ty_1 \cup \cdots \cup \ty_m) \leqT (\ty_1' \cup \cdots \cup \ty_n')$ iff $\{\ty_i\} \subseteq \{\ty_j'\}$ (the set of members of the left union is contained in the set of members of the right).
+% \end{enumerate}
+% We write $\ty \ltT \ty'$ for $\ty \leqT \ty'$ and $\ty' \not\leqT \ty$ (strict precision).
+% \end{definition}
+%
+% \begin{remark}
+% The precision order formalises the intuition that \emph{more information is better}: $\ty \leqT \ty'$ reads ``$\ty$ is at most as informative as $\ty'$''.
+% Unknown is the least informative type.
+% An object with more fields is strictly more informative than one with fewer fields.
+% A union with fewer alternatives is more informative than one with more.
+% \end{remark}
+%
+% \subsection{Union Canonicalization}
+%
+% Union types are subject to a \emph{canonicalization} operation that keeps them in a normal form.
+%
+% \begin{definition}[Canonicalization $\canon$]
+% \label{def:canon}
+% Given a type $\ty$, $\canon(\ty)$ is computed as follows:
+% \begin{enumerate}
+%   \item If $\ty$ is not a union, return $\ty$ unchanged.
+%   \item \emph{Flatten}: replace every union member that is itself a union by the transitive closure of its members.
+%   \item \emph{Deduplicate}: remove equal members (by structural equality), keeping first occurrences.
+%   \item \emph{Drop unknowns}: if the resulting set has more than one member, remove all $\Unknown$ members.
+%   \item \emph{Simplify}: if exactly one member remains, return that member (not a union).
+% \end{enumerate}
+% \end{definition}
+%
+% The effect of $\canon$ is that the empty union is the unique representation for ``no information'', and single-member unions are collapsed.
+% After canonicalization, a union $\ty_1 \cup \cdots \cup \ty_m$ has $m \geq 2$ and no $\Unknown$ member (unless it is the sole member of the whole type, which would have been simplified away).
+%
+% \section{Typing Environments}
+% \label{sec:env}
+% %%=============================================================
+%
+% The type analyzer is parameterised by a \emph{typing context}
+% \[
+% \Sigma \;=\; (\typof,\; \schema,\; \params,\; \pkg)
+% \]
+% where:
+% \begin{itemize}
+%   \item $\typof : \mathsf{Key} \to \mathbb{T}$ is a mutable \emph{type map} from string keys (stringified AST values) to types.
+%     We write $\typof(v)$ for $\typof(\mathsf{key}(v))$.
+%   \item $\schema : \mathsf{Path} \rightharpoonup \mathbb{T}$ is an \emph{input schema} providing types for paths into \texttt{input.review.object}.
+%     It is built from an example YAML/JSON document or a JSON Schema.
+%   \item $\params : \mathsf{Name} \rightharpoonup \mathbb{T}$ is a \emph{parameter map} for \texttt{input.parameters.\textit{name}} references.
+%   \item $\pkg$ is the \emph{package reference} (a sequence of names) used to resolve \texttt{data.\textit{pkg}.\textit{rule}} references.
+% \end{itemize}
+%
+% The type map $\typof$ is updated in place during analysis.
+% Two update operations are used:
+%
+% \paragraph{Precision-based update (\texttt{setType}).}
+% $\typof[v \mapsto \ty]$ overwrites the existing entry for $v$ only if $\typof(v) \leqT \ty$ (strictly less precise):
+% \[
+% \typof \mathrel{[v \xrightarrow{\leqT} \ty]} =
+% \begin{cases}
+% \typof[v \mapsto \ty] & \text{if } \ty \ltT \typof(v) \\
+% \typof & \text{otherwise}
+% \end{cases}
+% \]
+%
+% \paragraph{Union extension (\texttt{addToType}).}
+% $\typof \mathrel{[v \xrightarrow{\cup} \ty]}$ converts the current type of $v$ into a union and appends $\ty$, then canonicalizes:
+% \[
+% \typof \mathrel{[v \xrightarrow{\cup} \ty]} = \typof\bigl[v \mapsto \canon(\typof(v) \cup \ty)\bigr]
+% \]
+%
+% %%=============================================================
+% \section{Type Inference Rules}
+% \label{sec:inference}
+% %%=============================================================
+%
+% We use three judgment forms:
+% \begin{align*}
+% \Sigma \vdashT v : \ty  &\quad\text{(term/value type inference)} \\
+% \Sigma \vdashE e : \ty  &\quad\text{(expression type inference)} \\
+% \Sigma \vdashR \rho : \ty &\quad\text{(reference type inference)}
+% \end{align*}
+% All judgments have side effects on $\typof$.
+% The notation $\Sigma \vdashT v : \ty \leadsto \Sigma'$ makes the update explicit when needed; we omit it when the state change is clear from context.
+%
+% \subsection{Term Inference (\texttt{inferAstType})}
+% \label{sec:term-inference}
+%
+% \paragraph{Caching.}
+% Before case analysis, the system checks the cache:
+% if $v \in \dom(\typof)$ and $\typof(v) \neq \Unknown$, the cached type is returned directly.
+%
+% % \begin{figure}[h]
+% % \[
+% % \textbf{(T-Nil)}\quad
+% % \inferrule{ }{\Sigma \vdashT \mathbf{nil} : \Unknown}
+% % \qquad
+% % \textbf{(T-String)}\quad
+% % \inferrule{ }{\Sigma \vdashT s : \Str}
+% % \qquad
+% % \textbf{(T-Number)}\quad
+% % \inferrule{ }{\Sigma \vdashT n : \Int}
+% % \]
+% %
+% % \[
+% % \textbf{(T-Bool)}\quad
+% % \inferrule{ }{\Sigma \vdashT b : \Bool}
+% % \qquad
+% % \textbf{(T-Set)}\quad
+% % \inferrule{ }{\Sigma \vdashT \{t_1,\ldots\} : \RegoSet}
+% % \]
+%
+% \[
+% \textbf{(T-ArrayEmpty)}\quad
+% \inferrule{ }{\Sigma \vdashT [] : \Array{\Unknown}}
+% \qquad
+% \textbf{(T-ArrayNonEmpty)}\quad
+% \inferrule{
+%   \Sigma \vdashT v_0 : \ty
+% }{
+%   \Sigma \vdashT [v_0, v_1, \ldots] : \Array{\ty}
+% }
+% \]
+%
+% \[
+% \textbf{(T-Object)}\quad
+% \inferrule{
+%   \Sigma \vdashT v_i : \ty_i \quad \forall i \in 1..n
+% }{
+%   \Sigma \vdashT \{``k_1"{:}v_1, \ldots, ``k_n"{:}v_n\} : \Obj{k_1{:}\ty_1, \ldots, k_n{:}\ty_n}
+% }
+% \]
+% \caption{Type inference rules for literal terms.}
+% \label{fig:literal-rules}
+% \end{figure}
+%
+% \begin{remark}
+% Rule \textbf{(T-ArrayNonEmpty)} infers the element type from the \emph{first} element only.
+% This reflects the homogeneous-array assumption: in policy code, arrays are expected to be uniform.
+% Heterogeneous arrays produce a union type via the union-of-elements generalisation, but the current implementation chooses a simpler over-approximation for efficiency.
+% \end{remark}
+%
+% \paragraph{Variable inference.}
+% \[
+% \textbf{(T-VarLookup)}\quad
+% \inferrule{
+%   x \in \dom(\typof)
+% }{
+%   \Sigma \vdashT x : \typof(x)
+% }
+% \qquad
+% \textbf{(T-VarUnknown)}\quad
+% \inferrule{
+%   x \notin \dom(\typof)
+% }{
+%   \Sigma \vdashT x : \Unknown
+% }
+% \]
+%
+% Type propagation from a function parameter expectation:
+% \[
+% \textbf{(T-VarRefine)}\quad
+% \inferrule{
+%   \Sigma \vdashT x : \ty \\
+%   \ty_{\mathrm{exp}} \ltT \ty
+% }{
+%   \Sigma \vdashT x : \ty_{\mathrm{exp}}
+% }
+% \]
+% Rule \textbf{(T-VarRefine)} applies when an \emph{inherited type} $\ty_{\mathrm{exp}}$ (from a function parameter expectation) is strictly more precise than the currently known type $\ty$: in that case the expected type takes priority.
+%
+% \paragraph{Reference inference.}
+% \[
+% \textbf{(T-Ref)}\quad
+% \inferrule{
+%   \Sigma \vdashR r : \ty
+% }{
+%   \Sigma \vdashT r : \ty
+% }
+% \]
+%
+% \paragraph{Call-term inference.}
+% \[
+% \textbf{(T-Call)}\quad
+% \inferrule{
+%   \mathsf{sig}(f, k) = (\ty_r, \ty_1, \ldots, \ty_k) \\
+%   \Sigma \vdashT t_i : \ty_i' \quad \forall i \in 1..k
+% }{
+%   \Sigma \vdashT f(t_1,\ldots,t_k) : \ty_r
+% }
+% \]
+% where $\mathsf{sig}(f,k)$ is the predefined signature for function $f$ with $k$ parameters, providing the return type $\ty_r$ and the expected parameter types $\ty_1,\ldots,\ty_k$ used as $\ty_{\mathrm{exp}}$ when inferring each argument.
+%
+% \subsection{Expression Inference (\texttt{InferExprType})}
+% \label{sec:expr-inference}
+%
+% \begin{figure}[h]
+% \[
+% \textbf{(E-Term)}\quad
+% \inferrule{
+%   \Sigma \vdashT t : \ty
+% }{
+%   \Sigma \vdashE t : \ty
+% }
+% \]
+%
+% \[
+% \textbf{(E-Eq)}\quad
+% \inferrule{
+%   \Sigma \vdashT t_L : \ty_L \\
+%   \Sigma \vdashT t_R : \ty_R \\
+%   t_L \in \mathsf{Var} \Rightarrow \typof \mathrel{[t_L \xrightarrow{\cup} \ty_R]} \\
+%   t_R \in \mathsf{Var} \Rightarrow \typof \mathrel{[t_R \xrightarrow{\cup} \ty_L]}
+% }{
+%   \Sigma \vdashE (t_L \mathrel{=} t_R) : \Bool
+% }
+% \]
+%
+% \[
+% \textbf{(E-Op)}\quad
+% \inferrule{
+%   \mathit{op} \in \{<, \leq, >, \geq, \neq\}
+% }{
+%   \Sigma \vdashE (t_L \;\mathit{op}\; t_R) : \Bool
+% }
+% \qquad
+% \textbf{(E-Call)}\quad
+% \inferrule{
+%   \mathsf{sig}(f, k) = (\ty_r, \ty_1, \ldots, \ty_k) \\
+%   \Sigma \vdashT t_i : \_ \quad \forall i
+% }{
+%   \Sigma \vdashE f(t_1,\ldots,t_k) : \ty_r
+% }
+% \]
+% \caption{Type inference rules for expressions.}
+% \label{fig:expr-rules}
+% \end{figure}
+%
+% Rule \textbf{(E-Eq)} is the primary mechanism for bidirectional type propagation between variables.
+% When a variable $x$ is equated with a term $t$ of type $\ty$, the type $\ty$ is \emph{unioned into} the type of $x$ (and vice versa if both sides are variables).
+% This reflects Rego's unification semantics: the equality statement does not simply assign but \emph{constrains}, and both sides carry information about each other.
+%
+% \subsection{Reference Inference (\texttt{inferRefType})}
+% \label{sec:ref-inference}
+%
+% Let $r = v[s_1]\cdots[s_k]$ where $v$ is the head term.
+%
+% \[
+% \textbf{(R-Empty)}\quad
+% \inferrule{ }{\Sigma \vdashR \langle\;\rangle : \Unknown}
+% \]
+%
+% \[
+% \textbf{(R-InputParam)}\quad
+% \inferrule{
+%   r = \texttt{input.parameters.}n \\
+%   n \in \dom(\params)
+% }{
+%   \Sigma \vdashR r : \params(n)
+% }
+% \]
+%
+% \[
+% \textbf{(R-InputSchema)}\quad
+% \inferrule{
+%   r = \texttt{input.review.object.}p \\
+%   \schema(p) = \ty
+% }{
+%   \Sigma \vdashR r : \ty
+% }
+% \]
+%
+% \[
+% \textbf{(R-Data)}\quad
+% \inferrule{
+%   r = \texttt{data.}\pkg.q.p' \\
+%   q \in \dom(\typof) \\
+%   \pathtype(\typof(q), p') = \ty
+% }{
+%   \Sigma \vdashR r : \ty
+% }
+% \]
+%
+% \[
+% \textbf{(R-VarHead)}\quad
+% \inferrule{
+%   r = x[s_1]\cdots[s_k] \\
+%   x \in \dom(\typof) \\
+%   \pathtype(\typof(x), [s_1,\ldots,s_k]) = \ty
+% }{
+%   \Sigma \vdashR r : \ty
+% }
+% \qquad
+% \textbf{(R-Unknown)}\quad
+% \inferrule{
+%   \text{(no other rule applies)}
+% }{
+%   \Sigma \vdashR r : \Unknown
+% }
+% \]
+%
+% The auxiliary function $\pathtype(\ty, p)$ traverses type $\ty$ along path $p$ and is defined in \S\ref{sec:path}.
+%
+% \subsection{Path Traversal (\texttt{GetTypeFromPath})}
+% \label{sec:path}
+%
+% Given a type $\ty$ and a sequence of path nodes $p = [n_1, \ldots, n_\ell]$, the function $\pathtype(\ty, p)$ resolves the nested type:
+%
+% \[
+% \textbf{(P-Empty)}\quad
+% \inferrule{ }{\pathtype(\ty, []) = \ty}
+% \]
+%
+% \[
+% \textbf{(P-ObjGround)}\quad
+% \inferrule{
+%   \ty = \Obj{\ldots, f{:}\ty_f, \ldots} \\
+%   n_1 = f \text{ (ground key)}
+% }{
+%   \pathtype(\ty, [f, n_2, \ldots]) = \pathtype(\ty_f, [n_2,\ldots])
+% }
+% \]
+%
+% \[
+% \textbf{(P-ObjNonGround)}\quad
+% \inferrule{
+%   \ty = \Obj{f_1{:}\ty_1, \ldots, f_m{:}\ty_m} \\
+%   n_1 \text{ is a variable (non-ground)} \\
+%   \ty_\cup = \canon(\ty_1 \cup \cdots \cup \ty_m)
+% }{
+%   \pathtype(\ty, [n_1, n_2, \ldots]) = \pathtype(\ty_\cup, [n_2, \ldots])
+% }
+% \]
+%
+% \[
+% \textbf{(P-Array)}\quad
+% \inferrule{
+%   \ty = \Array{\ty'}
+% }{
+%   \pathtype(\ty, [n_1, n_2, \ldots]) = \pathtype(\ty', [n_2, \ldots])
+% }
+% \]
+%
+% \[
+% \textbf{(P-Union)}\quad
+% \inferrule{
+%   \ty = \ty_1 \cup \cdots \cup \ty_m \\
+%   \pathtype(\ty_i, p) = \ty_i' \quad \forall i
+% }{
+%   \pathtype(\ty, p) = \canon(\ty_1' \cup \cdots \cup \ty_m')
+% }
+% \]
+%
+% Rule \textbf{(P-ObjNonGround)} handles the common Rego idiom \texttt{x := obj[\_]}: the wildcard \texttt{\_} denotes an unspecified key, so the type of $x$ is the union of all field types of the object.
+%
