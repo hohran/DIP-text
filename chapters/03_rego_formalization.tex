@@ -7,9 +7,9 @@ All examples of Rego policies are valid code, interpretable online at the offici
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 80%
-% TODO: make into section
 % variables, atomic values, composite values
-\section{Values}
+\section{Terms}
+\label{s:terms}
 %%=============================================================
 
 This section describes values viable in Rego and defines their type system.
@@ -30,6 +30,7 @@ Calling variable $x$ a value, will hold the meaning of saying $\sigma_V(x)$.
 Variables in Rego can be either \emph{global} or \emph{local}.
 Global variables are accessible throughout the whole policy, whereas local variables are rule-specific and do not appear in the output document.
 Even though, local variables can \emph{shadow} global variables on name collision, we will not distinguish much between them, since the internal Rego compiler of OPA renames all local variables to unique names.
+We denote the set of all global variables with $\Globals$ and the set of all local variables with $\Locals$.
 
 %%=============================================================
 \subsection{Atomic and Composite Values}
@@ -113,6 +114,7 @@ set := { n, b, s, true }
 %%=============================================================
 % 99%
 \subsection{References and Undefined Values}
+\label{ss:ref}
 %%-------------------------------------------------------------
 
 To access a value from collection, Rego supports a square bracket notation similar to other modern programming languages.
@@ -127,39 +129,19 @@ $$ x["a"]["b"]["c"]["d"] $$
 is identical to
 $$ x.a.b.c.d $$
 
+Additionally, for a policy package $\pkg$ and a global variable $x$, which is defined in it, reference \texttt{data.$\pkg$.x} accesses the value $x$, i.e., $\sigma{\texttt{data.\textit{$\pkg$}.x}} = \sigma(x)$.
+In the compilation step of Rego execution, all global variables are transformed into this form.
+
 It is also possible that given collection does not contain any value at the specified key, for which Rego reserves a special \emph{undefined} value.
 Such value has specific properties, similar to \texttt{NaN} value in other programming languages.
 The most relevant properties of this value is that two undefined values are not equal, and that all expression containing an undefined value are also undefined.
 This means that also object literals containing even a single undefined value are undefined.
 
 \begin{example}
-  Let \texttt{a = [1,2,3]} and \texttt{o = \{"a": a\}}.
+  Let \texttt{a = [1,2,3]} and \texttt{o = \{"a": a\}} be defined in the package $\pkg$.
   Then the reference \texttt{o.a[0]} has value $1$ and references \texttt{o.b[0]} and \texttt{o.a[5]} are $\Undef$.
+  In addition, the values of \texttt{data.$\pkg$.a}, \texttt{a}, \texttt{data.$\pkg$.o.a}, and \texttt{o.a} are equal.
 \end{example}
-
-% %%=============================================================
-% \subsection{Type System}
-% \label{s:typ}
-% %%-------------------------------------------------------------
-%
-% Each value in Rego has its corresponding type.
-% The set of \emph{Rego types} $\mathbb{T}$ is defined by the grammar:
-% \begin{align*}
-% \ty \;::=\; & \Str \mid \Int \mid \Bool \mid \Null \mid \Undef \mid \Unknown \\
-%    \mid\;   & \ty_1 \cup \cdots \cup \ty_m \\
-%    \mid\;   & \Array{\ty} \\
-%    \mid\;   & \RegoSet{\ty} \\
-%    \mid\;   & \Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}
-% \end{align*}
-% The intended meaning is standard:
-% \begin{itemize}
-%   \item \emph{Atomic types} $\Str, \Int, \Bool, \Null$ correspond to atomic values in Rego; $\Undef$ is also considered an atomic type and it corresponds to a special value of the same name (similarly to $\Null$),
-%   \item $\Unknown$ is a \emph{placeholder} type used when no information is available yet,
-%   \item $\ty_1 \cup \cdots \cup \ty_m$ is a \emph{union} type, modelling values that may inhabit any of the member types.
-%   \item $\Array{\ty}$ is an \emph{array type}, where $\ty$ is a union over all of its element types,
-%   \item $\RegoSet{\ty}$ is a \emph{set type}, of elements of type $\ty$ (similarly to the array type),
-%   \item $\Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}$ is an \emph{object type} with fields $f_i$ typed $\ty_i$.
-% \end{itemize}
 
 %%=============================================================
 \subsection{Type System}
@@ -167,39 +149,64 @@ This means that also object literals containing even a single undefined value ar
 %%-------------------------------------------------------------
 
 Each value in Rego has its corresponding type.
-The set of \emph{Rego types} $\Types$ is defined by the grammar:
+The set of \emph{Rego types} $\mathbb{T}$ is defined by the grammar:
 \begin{align*}
-  \ty \;::=\; & \{\Str\} \mid \{\Int\} \mid \{\Bool\} \mid \{\Null\} \mid \{\Undef\} \\
-   \mid\;   & \Array{\ty_1,\ldots,\ty_n} \\
+\ty \;::=\; & \Str \mid \Int \mid \Bool \mid \Null \mid \Undef \mid \Unknown \\
+   \mid\;   & \ty_1 \cup \cdots \cup \ty_m \\
+   \mid\;   & \Array{\ty} \\
    \mid\;   & \RegoSet{\ty} \\
-   \mid\;   & \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \\
-   \mid\;   & \ty_1 \cup \ty_2
+   \mid\;   & \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}
 \end{align*}
-With the intended meaning:
+The intended meaning is standard:
 \begin{itemize}
   \item \emph{Atomic types} $\Str, \Int, \Bool, \Null$ correspond to atomic values in Rego; $\Undef$ is also considered an atomic type and it corresponds to a special value of the same name (similarly to $\Null$),
+  \item $\Unknown$ is a \emph{placeholder} type used when no information is available yet,
+  \item $\ty_1 \cup \cdots \cup \ty_m$ is a \emph{union} type, modelling values that may inhabit any of the member types.
   \item $\Array{\ty}$ is an \emph{array type}, where $\ty$ is a union over all of its element types,
   \item $\RegoSet{\ty}$ is a \emph{set type}, of elements of type $\ty$ (similarly to the array type),
-  \item $\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}$ is an \emph{object type} with fields $v_i \in \Vals$ typed $\ty_i$,
-  \item $\ty_1 \cup \ty_2$ denotes \emph{union} of types $\ty_1$ and $\ty_2$; formally speaking a type $\ty$ is considered a union, iff $|\ty| \le 1$.
+  \item $\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}$ is an \emph{object type} with fields $v_i \in \Vals$ typed $\ty_i$.
 \end{itemize}
+
+% %%=============================================================
+% \subsection{Type System}
+% \label{s:typ}
+% %%-------------------------------------------------------------
+%
+% Each value in Rego has its corresponding type.
+% The set of \emph{Rego types} $\Types$ is defined by the grammar:
+% \begin{align*}
+%   \ty \;::=\; & \{\Str\} \mid \{\Int\} \mid \{\Bool\} \mid \{\Null\} \mid \{\Undef\} \\
+%    \mid\;   & \{\Array{\ty_1,\ldots,\ty_n}\} \\
+%    \mid\;   & \{\SArray{\ty}\} \\
+%    \mid\;   & \{\RegoSet{\ty}\} \\
+%    \mid\;   & \{\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}\} \\
+%    \mid\;   & \ty_1 \cup \ty_2
+% \end{align*}
+% With the intended meaning:
+% \begin{itemize}
+%   \item \emph{Atomic types} $\Str, \Int, \Bool, \Null$ correspond to atomic values in Rego; $\Undef$ is also considered an atomic type and it corresponds to a special value of the same name (similarly to $\Null$),
+%   \item $\Array{\ty}$ is an \emph{array type}, where $\ty$ is a union over all of its element types,
+%   \item $\RegoSet{\ty}$ is a \emph{set type}, of elements of type $\ty$ (similarly to the array type),
+%   \item $\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}$ is an \emph{object type} with fields $v_i \in \Vals$ typed $\ty_i$,
+%   \item $\ty_1 \cup \ty_2$ denotes \emph{union} of types $\ty_1$ and $\ty_2$; formally speaking a type $\ty$ is considered a union, iff $|\ty| \le 1$.
+% \end{itemize}
 
 %%=============================================================
 % 99%
 % TODO: functions?
 \subsection{Function Calls and Terms}
+\label{ss:term}
 %%-------------------------------------------------------------
 
 Rego has a handful of builtin \emph{functions} used for arithmetics, string and regex manipulation, aggregation of collections, graph operations, database queries, hashing, and much more.
 Each of these functions have a designated name, a list of allowed parameter types, and a return type.
-
-In Rego, there are also functions with a variadic number of arguments, with the most prominent one being \texttt{sprintf}.
 Some of the most common functions also support infix operators, such as $+, -, ==, \geq$, etc., but they are always rewritten to their function form (e.g., \texttt{plus(1,2)}) by the OPA compiler.
 
 All functions allow the return value to be directly assigned into a variable with providing its name as an additional parameter.
+We will call this an \emph{assign form} of a function.
 In this manner, the expression
 $$ x := 1 + 2 $$
-is equivalent to
+is equivalent to the assign form
 $$ \texttt{plus(1,2,x)} $$.
 The internal compiler of this language \cite{opa:git} prefers the latter option whenever possible.
 In this paper, we will prefer the first option for its ease of readability.
@@ -210,7 +217,6 @@ Formally said, a Rego function is defined as a triplet $f = (f_N, f_P, f_R)$, wh
   \item $f_P = \{(\ty_1,\dots,\ty_a) | a \in \Nat_0\}$ is a set of lists of parameter types, where $a$ is the function arity and $\ty_i \in \Types$ for $1 \leq i \leq a$,
   \item $f_R \in \Types$ is the return type.
 \end{itemize}
-For variadic functions, we designate a special function for every possible arity, whilst transforming the name to contain the arity, such as $\texttt{sprintf}_4$.
 We denote the set of all functions with $\Funs$.
 
 In Rego, we use a special name \emph{term} for everything either holding a value, or being a function identifier.

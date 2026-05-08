@@ -1,0 +1,42 @@
+\chapter{Transformation into SMT}
+\label{ch:trans}
+
+This chapter walks over the formal specification of the transformation process from \rego into \smtlib.
+The structure of this chapter will correspond to the chapter \ref{ch:form}, which introduced the formal definition of targeted subset of the Rego policy language.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TODO:
+% variables
+% values
+%% atomic
+%% composite
+% references
+% types 
+% function calls
+\section{Terms}
+%%=============================================================
+
+This section describes the transformation of Rego terms into SMT.
+By the specification given in \ref{ch:form}, terms can be either values, variables, references, or function calls.
+
+%%=============================================================
+\subsection{Variables}
+%%-------------------------------------------------------------
+
+In SMT, variables can be declared in the global scope with the \texttt{declare-fun} construct.
+Since \smtlib has is a strongly-typed language, we need to provide sorts of variables during the declaration.
+For $x \in \Vars$ we set a its sort to be \texttt{OTypeD<N>}, where $N$ is the depth of its type, i.e., $\depth(x)$.
+We will cover the specifics of such type later.
+
+Intuitively, the global scope will only contain global variables.
+Hypothetically, for no clash in variable names (which we ensure), also local variables could be declared with mentioned \texttt{declare-fun} construct.
+We will choose to only specify them locally as expected by the Rego semantics but with the main purpose not to let them pollute the output model.
+For this cause, we will use the \texttt{let} construct for assigned variables, \texttt{exists} for existentially quantified variables, and \texttt{forall} for universally quantified variables.
+
+
+
+
+
+
+
+

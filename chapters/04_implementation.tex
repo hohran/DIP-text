@@ -4,11 +4,8 @@
 This chapter will serve as the overview of the final implementation of this algorithm.
 As it was previously said, this algorithm is a part of the verification tool \text{VeriRego}, developed by the research group \text{VeriFit}.
 
-As the source code of the targetted Open Policy Agent (OPA)\footnote{
-    The Open Policy Agent is publicly available at \url{https://github.com/open-policy-agent/opa}.
-}
-is written in the programming language \textsc{Go}, a lot of the infrastructure is already prepared when choosing this language as the base for \text{VeriRego}.
-Most importantly, this publicly available source code contains modules for translating the policy specification in Rego into a Syntax Tree (ast) and compiling of such ast into more sophisticated form (see module \text{compile}).
+As the source code of the targetted Open Policy Agent \cite{opa:git} is written in the programming language \textsc{Go}, a lot of the infrastructure is already prepared when choosing this language as the base for \text{VeriRego}.
+% Most importantly, this source co
 
 In this chapter, we will peak behind the curtain of the most important steps of the desired transformation.
 That is, the type inference, generating of the SMT-LIB compliant sort, expression transformation, and the general structure of the implemented work.
