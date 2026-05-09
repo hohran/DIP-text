@@ -221,6 +221,59 @@ For reference prefix $r$ of depth $d$ accessed with key $k$, we create specific 
   \item set: \texttt{(ite (select (set$_d$ $r$) $k$) $k$ \texttt{Wrap(OUndef,$\depth(k)$)})}
 \end{enumerate}
 
+%%=============================================================
+\subsection{Function Calls}
+\label{ss:func:t}
+%%-------------------------------------------------------------
+
+Recall from section~\ref{ss:term} that a Rego function $f \in \Funs$ is a triplet $(f_N, f_P, f_R)$, where $f_P$ is a set of admissible parameter type lists.
+For the purpose of this transformation, we restrict to functions with a \emph{single signature}, i.e., $|f_P| = 1$.
+Under this assumption, let $(\ty_1, \dots, \ty_a)$ denote the unique parameter list of arity $a$.
+
+The encoding of a function call $f(t_1, \dots, t_a) \in \Terms$ follows the general scheme:
+$$\encode(f(t_1, \dots, t_a)) \;=\; \texttt{(}\encode(f_N)\; s_1\; \cdots\; s_a\texttt{)}$$
+where $\encode(f_N)$ denotes the SMT symbol corresponding to the Rego function name $f_N$\footnote{
+  Notice that for the encoding of a function name $f_N$ with $\encode(f_N)$, we abuse the notation of this signature, which should map to $\STerms$, i.e., Rego terms with specific depth, which does not apply to operation names.
+}, and each $s_i$ is the encoding $\encode(t_i)$ adjusted to the sort expected by $\ty_i$.
+Concretely, for $s_i = \encode(t_i) \in \STerms$:
+\begin{itemize}
+  \item If $\ty_i$ is an atomic type ($\depth(\ty_i) = 0$), the value $s_i$ is first reduced to depth $0$ via $\texttt{Unwrap}(s_i, 0)$, and then the corresponding field accessor is applied to extract the raw SMT sort: \texttt{(num $s_i$)} for $\Int$, \texttt{(str $s_i$)} for $\Str$, and \texttt{(bool $s_i$)} for $\Bool$, yielding a term of depth $-1$ as defined in the Values subsection.
+  \item If $\ty_i$ is a composite type, $\texttt{Wrap}(s_i, \depth(\ty_i))$ is applied, yielding a term of depth $\depth(\ty_i)$.
+\end{itemize}
+
+\paragraph{Built-in functions.}
+As noted in section~\ref{ss:term}, infix operators such as \texttt{+} or \texttt{<} are compiled to their function form by the OPA compiler; consequently, the transformation operates uniformly on function call terms.
+The mapping $\encode(f_N)$ for all supported built-in operations is given by table~\ref{t:builtins}.
+
+\begin{table}[h]
+  \centering
+  \caption{Definition of $\encode(f_N)$ for supported Rego built-in operations.}
+  \label{t:builtins}
+  \begin{tabular}{ll}
+    \hline
+    \textbf{Rego operation} & \textbf{\smtlib term} \\
+    \hline
+    \texttt{plus}, \texttt{minus}, \texttt{mul}, \texttt{div} & \texttt{+}, \texttt{-}, \texttt{*}, \texttt{/} \\
+    \texttt{gt}, \texttt{gte}, \texttt{lt}, \texttt{lte}     & \texttt{>}, \texttt{>=}, \texttt{<}, \texttt{<=} \\
+    \texttt{concat}                                            & \texttt{str.++} \\
+    \texttt{contains}                                          & \texttt{str.contains} \\
+    \texttt{startswith}, \texttt{endswith}                     & \texttt{str.prefixof}, \texttt{str.suffixof} \\
+    \texttt{indexof}                                           & \texttt{str.indexof} \\
+    \texttt{substring}                                         & \texttt{str.substr} \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\paragraph{Equality and inequality.}
+The equality and unification operators (\texttt{==} and \texttt{=}), as well as inequality (\texttt{!=}), are treated as a special case.
+Rather than extracting the operands to their atomic sorts, both sides are wrapped to a common depth $d = \max(\depth(s_1), \depth(s_2))$ using \texttt{Wrap} before the comparison is emitted.
+Equality is then encoded as \texttt{(= $s_1$ $s_2$)} and inequality as \texttt{(not (= $s_1$ $s_2$))}.
+
+\paragraph{User-defined functions.}
+For user-defined functions, $\encode(f_N) = f_N$, i.e., the Rego name is used directly as the SMT function symbol.
+Each such function is emitted as a \texttt{define-fun} declaration in the \smtlib output, and the argument and return sorts are determined by the types inferred during type analysis (chapter~\ref{ch:typ}).
+At call sites, user-defined functions follow the same general encoding scheme as built-in functions described above.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Expressions}
 %%=============================================================
