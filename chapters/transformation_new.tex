@@ -5,13 +5,11 @@ This chapter walks over the formal specification of the transformation process f
 The structure of this chapter will correspond to the chapter \ref{ch:form}, which introduced the formal definition of targeted subset of the Rego policy language.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% TODO:
-% variables
-% values
-%% atomic
-%% composite
+% variables ✓
+% values ✓
+%% atomic ✓
+%% composite ✓
 % references
-% types 
 % function calls
 \section{Terms}
 %%=============================================================
@@ -19,8 +17,14 @@ The structure of this chapter will correspond to the chapter \ref{ch:form}, whic
 This section describes the transformation of Rego terms into SMT.
 By the specification given in \ref{ch:form}, terms can be either values, variables, references, or function calls.
 
+Since we will operate with an \smtlib representation of terms, we define a set of valid SMT term encodings with $\STerms$.
+We set such encodings to also inherit the properties of terms, such as depth $\depth$ or type $\typof$.
+During this section, we will iteratively refine the function $\encode: \Terms \to \STerms$.
+
 %%=============================================================
+% 99%
 \subsection{Variables}
+\label{ss:vars:t}
 %%-------------------------------------------------------------
 
 In SMT, variables can be declared in the global scope with the \texttt{declare-fun} construct.
@@ -32,11 +36,196 @@ Intuitively, the global scope will only contain global variables.
 Hypothetically, for no clash in variable names (which we ensure), also local variables could be declared with mentioned \texttt{declare-fun} construct.
 We will choose to only specify them locally as expected by the Rego semantics but with the main purpose not to let them pollute the output model.
 For this cause, we will use the \texttt{let} construct for assigned variables, \texttt{exists} for existentially quantified variables, and \texttt{forall} for universally quantified variables.
+Since the \texttt{let} construct does not specify the sort of given local variable, we need to make sure to assign it always a value of expected type.
+
+%%=============================================================
+\subsection{Values}
+%%-------------------------------------------------------------
+
+This passage reasons about the SMT sorts used to represent given Rego values.
+
+%%-------------------------------------------------------------
+\subsubsection{Atomic Values}
+%%.............................................................
+
+For Rego constants of atomic types, we choose the transformation into the following \smtlib sorts.
+For $\Str$ and $\Bool$, their default SMT variations are semantically equivalent since the sort String accepts Unicode characters.
+For values of types $\Null$ and $\Undef$, we declare new sorts of the respective names.
+
+The Rego type $\Int$ allows for its values to be either floating point or whole numbers, which would result in the corresponding SMT sort being an union between two options.
+This is acceptable in \smtlib, with the possible types being \texttt{Float} and either \texttt{BitVec 64} or \texttt{Int}.
+With my supervisor, we decided that for the current state of the presented tool, the support for floating point numbers can be omitted.
+This decision is also backed up by the fact that values of this sub-type are not present in most of the reference policies \cite{rego-policies:web}.
+The decided representation of $\Int$ is thus the default \texttt{Int} sort.
+
+Since every atomic type $\ty$ is defined to have its depth $\depth(\ty) = 0$, we declare the sort for atomic values as:
+\begin{lstlisting}[language=SMT]
+(declare-datatypes ()
+  ((OTypeD0
+    (OString (str String))
+    (ONumber (num Int))
+    (OBoolean (bool Boolean))
+    ONull
+    OUndef
+  )))
+\end{lstlisting}
+
+In the domain of $\STerms$ we define the depth of values of sorts \texttt{String}, \texttt{Int}, and \texttt{Boolean} to be $-1$, to reflect that it is not assignable to a variable of depth $0$.
+
+%%-------------------------------------------------------------
+\subsubsection{Composite Values}
+%%.............................................................
+
+The implementation of collections brings up difficulties, since by definition they can be infinitely nested, which would lead to a recursive datatype, which is a great bottleneck for a formal analysis, such as SMT solving.
+As we have already defined a mechanism for capturing specific types of values and each type has a specific depth, we can restrict the SMT representation to operate only on values up to a set maximum depth.
+Such sorts are defined in \smtlib in the theory of algebraic datatypes, which is transformable into the theory of uninterpreted functions.
+
+As we described in the passage \ref{ss:vars:t}, we declare sorts of form \texttt{OTypeD<N>}, where $N$ would be limited to the maximum depth of term type found for given policy, i.e.,
+$$ N = \max_{t \in \Terms}(\depth(t)) $$
+
+We have already established the atomic sort \texttt{OTypeD0}; in this section we will iteratively define and refine the sort of a higher depth.
+
+%%.............................................................
+\paragraph{Objects.}
+The support of objects is a crucial part to the whole analysis, since OPA communicates with the policies with structured documents, most prominently objects.
+Fortunately, \smtlib supports the theory of arrays, where \texttt{(Array $T_1$ $T_2$)} maps keys of type $T_1$ to values of type $T_2$.
+This behaviour perfectly corresponds to the semantics of Rego objects.
+
+By the definition of a type depth $\depth$, every member of an object has strictly lower depth than the object itself.
+But this does not apply for its keys, which is why we need to take them into account separately.
+
+A possible solution would be to get the maximum depth of a key in all objects and simply define $T_1$ to be of this maximum depth for all object specified.
+Even though this option allows to fully satisfy the needs of object keys, we decided to initially only support keys of the String sort, since other alternative appear in the reference policies very sparsely.
+This is due to the property of the most relevant document format in OPA -- JSON -- where objects can only have string keys.
+
+Thus we define an object of depth $N$ to have SMT sort:
+\begin{center}
+  \texttt{(Array String OTypeD<N-1>)}
+\end{center}
+
+It is important to note that as the Array sort in \smtlib represents a total mapping, meaning we need to explicitly set all unmentioned keys to $\Undef$.
+Fortunately, modern SMT solvers often support creation of so called \emph{constant arrays}, which map every key to the same value.
+We can combine this construct with the \texttt{store} operation to create constant objects corresponding to Rego semantics, such as in figure \ref{f:cons-obj}.
+
+\begin{figure}
+  \label{f:cons-obj}
+  \caption{\smtlib snippet for $\encode(\{\q{a}: 1, \q{b}: \true\})$.}
+\begin{lstlisting}[language=SMT]
+(store
+  (store
+    (as-const (Array OTypeD0 OTypeD0) OUndef)
+    "a" (ONumber 1))
+  "b" (OBoolean true))
+\end{lstlisting}
+\end{figure}
+
+%%.............................................................
+\paragraph{Arrays.}
+Counterintuitively, the SMT Array sort does not properly represent the Rego $\Array{\_}$ type, since -- as already mentioned -- SMT Arrays are full mapping from the key domain, whereas Rego arrays only allow positive integers and only for a specific range starting with $0$.
+For this cause, we implement this type with the \texttt{Seq} sort:
+\begin{center}
+  \texttt{(Seq OTypeD<N-1>)}
+\end{center}
+
+%%.............................................................
+\paragraph{Sets.}
+Even though \ziii does not explicitly support a designated set theory, they are regularly represented as an array mapping from specified type to boolean, treating only values mapped to \true as defined.
+We will use the constructor \texttt{(Set T)} in place for \texttt{(Array T Bool)} for better clarity.
+\begin{center}
+  \texttt{(Set OTypeD<N-1>)}
+\end{center}
+
+%%.............................................................
+\paragraph{Unaligned Collections.}
+Since the designated sorts for collection specified above only allow to access values of the directly lower depth, we restricted the collections to contain only values of the same depth.
+This is inadequate to the actual behaviour of composite types, which are allowed to be in this way \emph{unaligned}, such as with the object:
+\begin{center}
+  \texttt{\{ \q{D0}: 1, \q{D1}: \{ \q{foo}: \q{bar} \} \}}
+\end{center}
+For this cause, we specify a designated constructor to explicitly \emph{wrap} a sort into an incremented depth.
+Thus the definition of the depth-specific sort is the following:
+\begin{lstlisting}[language=SMT]
+(declare-datatypes ()
+  ((OTypeD<N>
+    (Wrap<N> (wrap<N> OTypeD<N-1>))
+    (OObj<N> (obj<N> (Array String OTypeD<N-1>)))
+    (OArray<N> (arr<N> (Seq OTypeD<N-1>)))
+    (OSet<N> (set<N> (Set OTypeD<N-1>)))
+  )))
+\end{lstlisting}
 
 
+%%=============================================================
+\subsection{References}
+%%-------------------------------------------------------------
 
+When dealing with references (i.e., collection accessing), we have to distinguish between different types of their \emph{bases} (defined in section \ref{ss:ref}).
+In this paper, we will cover only the special case of \texttt{data.$\pkg$.x} which translates to the given variable \texttt{x}; all other bases are kept intact.
 
+Iteratively, for each following term, we wrap the base with
+\begin{enumerate}
+  \item a selector specific for the type of given value,
+  \item constructor to the actual sort domain of selected element.
+\end{enumerate}
 
+Since we will often need to modify the depth we define algorithms:
+\begin{center}
+  \begin{minipage}{0.44\textwidth}
+    \begin{algorithm}[H]
+      \SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+      \caption{Wrap(t,d)}\label{alg:wrap}
+    \Input{$t \in \STerms$, $d \in \Nat$}
+    \Output{$t' \in \STerms$}
+    \BlankLine
+    $t' \leftarrow t$\;
+    \If{$\depth(t) = -1$ \tcc*[r]{atomic}} {
+      \uIf{$\typof(t) = \Int$}{
+        $t' \leftarrow$ \texttt{(ONumber $t'$)}\;
+      }
+      \uElseIf{$\typof(t) = \Str$}{
+        $t' \leftarrow$ \texttt{(OString $t'$)}\;
+      }
+      \Else{
+        $t' \leftarrow$ \texttt{(OBoolean $t'$)}\;
+      }
+    }
+    \For{$d' \leftarrow (\depth(t')+1)..d$} {
+      $t' \leftarrow$ \texttt{(Wrap$_{d'}$ $t'$)}
+    }
+    \Return{$t'$}
+    \end{algorithm}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.44\textwidth}
+    \begin{algorithm}[H]
+      \SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+      \caption{Unwrap(t,d)}\label{alg:unwrap}
+    \Input{$t \in \STerms$, $d \in \Nat$}
+    \Output{$t' \in \STerms$}
+    \BlankLine
+    $t' \leftarrow t$\;
+    \For{$d' \leftarrow (\depth(t))..d$} {
+      \tcp{$d'$ is descending}
+      $t' \leftarrow$ \texttt{(Wrap$_{d'}$ $t'$)} 
+    }
+    \end{algorithm}
+  \end{minipage}
+\end{center}
 
+% TODO yap about wrap/unwrap
 
+For reference prefix $r$ of depth $d$ accessed with key $k$, we create specific selectors based on the composite type of $r$:
+\begin{enumerate}
+  \item object: \texttt{(select (obj$_d$ $r$) $k$)}
+  \item array: \texttt{(seq.nth (arr$_d$ $s$) $s$)}
+  \item set: \texttt{(ite (select (set$_d$ $r$) $k$) $k$ \texttt{Wrap(OUndef,$\depth(k)$)})}
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Expressions}
+%%=============================================================
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Rules}
+%%=============================================================
 

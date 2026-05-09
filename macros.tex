@@ -29,6 +29,7 @@
 \newcommand{\Rules}{P}
 \newcommand{\Inc}{\Rules_{inc}} % incremental rules TODO
 \newcommand{\Comp}{\Rules_{comp}} % complete rules TODO
+\newcommand{\STerms}{\bar{\mathbb{X}}}
 
 \newcommand{\Rule}{r}
 \newcommand{\Def}{\delta}
@@ -38,7 +39,9 @@
 \newcommand{\sat}{\mathsf{SAT}}
 \newcommand{\unsat}{\mathsf{UNSAT}}
 
-\newcommand{\smtlib}{\texttt{SMT-LIB2}}
+\newcommand{\smtlib}{\texttt{SMT-LIB2}\xspace}
+
+\newcommand{\q}[1]{``#1"}
 
 \newcommand{\true}{\texttt{true}\xspace}
 \newcommand{\false}{\texttt{false}\xspace}
@@ -50,15 +53,18 @@
 \newcommand{\pre}{\sqsubset}
 \newcommand{\npre}{\not\sqsubset}
 
+
 \newcommand{\norm}{\mathsf{norm}}
 \newcommand{\refine}[2]{\typof \mathrel{[#1 \xrightarrow{\leqT} #2]}}
 \newcommand{\unionize}[2]{\typof \mathrel{[#1 \xrightarrow{\cup} #2]}}
 \newcommand{\assign}[2]{\typof \mathrel{[#1 \mapsto #2]}}
+
+\newcommand{\encode}{\mathsf{encode}}
  
 \newcommand{\Unknown}{\mathsf{unknown}}
 \newcommand{\Undef}{\mathsf{undef}}
 \newcommand{\Bool}{\mathsf{bool}}
-\newcommand{\Int}{\mathsf{int}}
+\newcommand{\Int}{\mathsf{num}}
 \newcommand{\Str}{\mathsf{string}}
 \newcommand{\Null}{\mathsf{null}}
 \newcommand{\FnT}{\mathsf{fn}}

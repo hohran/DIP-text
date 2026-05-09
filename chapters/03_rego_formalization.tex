@@ -37,7 +37,7 @@ We denote the set of all global variables with $\Globals$ and the set of all loc
 %%-------------------------------------------------------------
 In Rego, values of variables can be of the given types:
 \begin{itemize}
-  \item \emph{Strings}: Sequences of ASCII characters enclosed in double-quotes, such as \texttt{"abc"}.
+  \item \emph{Strings}: Sequences of Unicode characters enclosed in double-quotes, such as \texttt{"abc"}.
     \textit{Rego also supports prefixing strings with \$ symbol for creating so called template-string used for runtime interpolation, but we will not cover them in this work.}
 
   \item \emph{Numbers}: In Rego, this name, in accordance to the JSON format, represents either an unbounded whole number (\texttt{BigInt}), a whole 64-bit number or a floating-point number (64-bit double-precision as in IEEE 754).
@@ -131,6 +131,7 @@ $$ x.a.b.c.d $$
 
 Additionally, for a policy package $\pkg$ and a global variable $x$, which is defined in it, reference \texttt{data.$\pkg$.x} accesses the value $x$, i.e., $\sigma{\texttt{data.\textit{$\pkg$}.x}} = \sigma(x)$.
 In the compilation step of Rego execution, all global variables are transformed into this form.
+We use the notion of \emph{base} for the shortest prefix of a reference containing value in the given context.
 
 It is also possible that given collection does not contain any value at the specified key, for which Rego reserves a special \emph{undefined} value.
 Such value has specific properties, similar to \texttt{NaN} value in other programming languages.
@@ -140,7 +141,7 @@ This means that also object literals containing even a single undefined value ar
 \begin{example}
   Let \texttt{a = [1,2,3]} and \texttt{o = \{"a": a\}} be defined in the package $\pkg$.
   Then the reference \texttt{o.a[0]} has value $1$ and references \texttt{o.b[0]} and \texttt{o.a[5]} are $\Undef$.
-  In addition, the values of \texttt{data.$\pkg$.a}, \texttt{a}, \texttt{data.$\pkg$.o.a}, and \texttt{o.a} are equal.
+  In addition, the values of \texttt{data.$\pkg$.a}, \texttt{a}, \texttt{data.$\pkg$.o.a}, and \texttt{o.a} are equal, and the base of \texttt{data.$\pkg$.o.a} is \texttt{data.$\pkg$.o}.
 \end{example}
 
 %%=============================================================
