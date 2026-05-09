@@ -276,7 +276,52 @@ At call sites, user-defined functions follow the same general encoding scheme as
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Expressions}
+\label{s:expr:t}
 %%=============================================================
+
+The translation of a rule body $B_E = (e_1, \dots, e_n)$ produces a pair $(\phi, D)$, where $\phi$ is a proposition representing the conjunction of all body constraints, and $D = (d_1, \dots, d_k)$ is an ordered list of local variable definitions.
+During translation, a \emph{definition context} $\Context \subseteq \Locals$, initially empty, records which local variables have already been defined in the current body; it is extended whenever a new definition is appended to $D$.
+For the current state of the transformation, existentially and universally quantified variables are not handled; their support is left for future work.
+
+%%=============================================================
+\subsection{Validating Expressions}
+\label{ss:expr:val}
+%%-------------------------------------------------------------
+
+An expression $e_i$ \emph{validates} when it contributes a proposition to the conjunction $\phi$.
+
+\paragraph{Single-term and Function Call Expressions.}
+When $e_i$ is a single term $t$, or a function call expression not in assign form (section~\ref{ss:term}), its contribution to $\phi$ is the SMT encoding of the holdability condition $\Holds$ defined in section~\ref{s:exprs}.
+For $s = \encode(t) \in \STerms$ with inferred type $\ty = \typof(s)$, the encoding of $\Holds(s)$ is the conjunction of:
+\begin{itemize}
+  \item \texttt{(not (is-OUndef $\texttt{Unwrap}(s, 0)$))}, if $\Undef$ is among the possible types of $s$,
+  \item \texttt{(bool $\texttt{Unwrap}(s, 0)$)}, if $\Bool$ is among the possible types of $s$.
+\end{itemize}
+If neither condition applies, the encoding is \texttt{true}, reflecting that values of other types always hold.
+
+\paragraph{Equality.}
+When $e_i$ is the equality expression $x = t$ and $x \in \Context$, it contributes an equality proposition to $\phi$, encoded as described in section~\ref{ss:func:t}.
+If $x \notin \Context$, the expression instead creates a local variable definition and no proposition is added to $\phi$.
+
+%%=============================================================
+\subsection{Local Variable Definitions}
+\label{ss:expr:let}
+%%-------------------------------------------------------------
+
+A local variable definition $d = (x, s) \in \Vars \times \STerms$ pairs a variable name with an SMT value.
+Whenever a definition is created, the context is extended: $\Context \leftarrow \Context \cup \{x\}$.
+Definitions arise from two sources.
+
+\paragraph{Equality as assignment.}
+When $e_i$ is the equality expression $x = t$ for $x \notin \Context$, the definition $(x,\ \texttt{Wrap}(\encode(t),\, \depth(x)))$ is appended to $D$.
+The wrapping to $\depth(x)$ ensures the assigned value has the sort declared for $x$ by the type analysis.
+
+\paragraph{Function call in assign form.}
+As described in section~\ref{ss:term}, a function $f$ of arity $a$ may be called in assign form by supplying the return variable as an additional $(a+1)$-th argument.
+In such case, the definition $(x,\ \texttt{Wrap}(\encode(f(t_1, \dots, t_a)),\, \depth(f_R)))$ is appended to $D$, where $f_R$ is the inferred return type of $f$.\footnote{
+  Functions are in the assign form $f(t_1, \dots, t_a, t_r)$ only when $t_r \notin \Context$.
+  It is an implicit property of the Rego compilation.
+}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Rules}
