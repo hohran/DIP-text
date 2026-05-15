@@ -1,0 +1,257 @@
+\chapter{Implementation}
+\label{ch:impl}
+
+This chapter describes the implementation of \verirego, a tool for the verification of \rego access control policies via translation to \smtlib, developed by the VeriFIT research group.
+The tool is written in Go, reusing the parsing infrastructure of the Open Policy Agent~\cite{opa:git}.
+We describe the architecture of \verirego and the design of its two main components --- the type analysis and the SMT translation --- which put into practice the theory established in the preceding chapters.
+
+\section{Architecture}
+\label{s:arch}
+
+\verirego{} is structured as a two-phase pipeline: a type analysis phase followed by an
+SMT translation phase.
+The two phases are connected through a single shared data structure and both operate on
+the same parsed representation of the input policy.
+
+\subsection{Pipeline}
+\label{ss:pipeline}
+
+The tool accepts a \rego{} policy file as its primary input.
+Additionally, the \texttt{input} and \texttt{data} documents --- which the policy is
+evaluated against --- can each be provided either as a concrete object (a YAML or JSON
+file) or as a symbolic description in the form of a JSON Schema.
+Even though both are marked as optional, using such objects in the policy would result in $\Unknown$ values, which are not translatable.
+
+Before type analysis, the parsed policy undergoes a preprocessing step performed by
+\texttt{pkg/simplify}: local variables are renamed to unique names to avoid shadowing,
+and eligible predicate definitions are inlined.
+This produces a simplified AST that the subsequent phases operate on.
+
+In the type analysis phase, the type map $\typof$ is constructed.
+If a concrete or symbolic description of \texttt{input} or \texttt{data} is provided,
+the package \texttt{pkg/infer} seeds $\typof$ with the types of their fields before any
+policy-level inference takes place.
+The package \texttt{pkg/analysis} then traverses the simplified AST and refines $\typof$
+according to the inference rules described in Chapter~\ref{ch:typ}.
+
+In the SMT translation phase, the package \texttt{pkg/smt} consumes $\typof$ and the
+simplified AST to produce a \smtlib{} formula.
+The translation proceeds in three ordered passes: first, the bounded-depth SMT sort
+declarations are generated from the inferred types; second, the global variables are
+declared; and third, the policy rules are translated into SMT assertions.
+The resulting formula can then be passed to an SMT solver such as \ziii{} or \cvcv{}.
+
+\begin{figure}
+    \centering
+    % TODO: pipeline figure
+    \caption{Data flow through the \verirego{} pipeline.}
+    \label{fig:pipeline}
+\end{figure}
+
+Each phase is also accessible as a standalone command-line tool: \texttt{cmd/type\_analysis}
+runs the type analysis and prints the resulting type map, \texttt{cmd/schema\_inference}
+infers a JSON Schema from a concrete input document, and \texttt{cmd/smt} runs the full
+pipeline and outputs the \smtlib{} formula.
+This separation allows intermediate results to be inspected and each phase to be tested
+in isolation.
+
+\subsection{Component interface}
+\label{ss:interface}
+
+The sole coupling between the two phases is the \texttt{TypeAnalyzer} structure, defined
+in \texttt{pkg/types}.
+It holds the type map $\typof$, mapping every Rego term encountered during analysis to
+its inferred type, and is the primary output of the type analysis phase.
+The SMT translator is instantiated with the \texttt{TypeAnalyzer} and the simplified AST
+module as its only inputs, and has no knowledge of how the types were inferred --- only
+of the result.
+
+The OPA AST module is the other shared artifact: both phases read the same parsed
+representation of the policy, but neither modifies it.
+As a result, the two phases are decoupled in both directions: the type analysis does not
+depend on any SMT-specific structure, and the SMT translator does not depend on any
+inference-specific logic.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Type Analysis}
+\label{s:ta}
+%%=============================================================
+
+The type analysis component implements the inference described in Chapter~\ref{ch:typ}.
+The formal specification there was written to refine the behaviour of the implemented version; minor deviations between the two are noted where they arise.
+
+%%=============================================================
+\subsection{Type Representation}
+\label{ss:ta:rep}
+%%-------------------------------------------------------------
+
+The central data structure of the type analysis is the \texttt{TypeAnalyzer}, which
+holds the type map $\typof$ as a mutable mapping from Rego term keys to their inferred
+types.
+Each entry in $\typof$ is represented by a \texttt{RegoTypeDef}, a structure that
+encapsulates a single type definition, covering the atomic types ($\Str$, $\Int$,
+$\Bool$, $\Null$), array types, object types, union types, and the special $\Unknown$
+type.
+In the current state of the implementation, we omit the support for sets.
+
+The two operations that mutate $\typof$ during inference correspond to the formal
+definitions in Section~\ref{sec:inference}: precision-based update $\refine{v}{\ty}$,
+which overwrites an entry only when the new type is strictly more precise, and union
+extension $\unionize{v}{\ty}$, which widens an entry into a normalized union.
+
+A key deviation from the formal rules is the treatment of $\Undef$.
+In the implementation, $\Undef$ is never written into $\typof$ because types are not deliberately checked for undefined-ness.
+This property makes the implementation more straight-forward, but ultimate introduces divergences with the formal specification and the expected behaviour of Rego, and thus is a subject to refinement.
+
+%%=============================================================
+\subsection{Seeding from Input and Data Documents}
+\label{ss:ta:seed}
+%%-------------------------------------------------------------
+
+Before policy-level inference begins, $\typof$ is seeded with type information for the \texttt{input} and \texttt{data} documents through the \texttt{InputSchemaAPI} interface, which abstracts over two modes of providing a document.
+
+In the \emph{concrete} mode, a YAML or JSON file containing an actual document is parsed and the types of its fields are read directly from the values present.
+In the \emph{symbolic} mode, a JSON Schema is parsed and its declared property types are translated into Rego types, populating the corresponding \texttt{input.*} and \texttt{data.*} paths in $\typof$.
+Both modes yield the same result from the perspective of the rest of the pipeline: a partially populated $\typof$ before the policy AST is examined.
+
+As a by-product of this infrastructure, \verirego{} also supports the reverse direction: the \texttt{cmd/schema\_inference} command infers what schema the \texttt{input} document must conform to, by walking the policy and observing how \texttt{input.*} references are used.
+
+%%=============================================================
+\subsection{Policy Inference}
+\label{ss:ta:infer}
+%%-------------------------------------------------------------
+
+The main entry point for policy-level inference is \texttt{AnalyzeModule}, which
+iterates over the rules of the compiled module and refines $\typof$ for each one.
+The traversal is driven by the visitor infrastructure from \texttt{pkg/analysis},
+which provides a generic \texttt{ASTVisitor} interface and an \texttt{ASTValueVisitor}
+implementation that walks the OPA AST, accumulating and joining a \texttt{PropagatedValue}
+across sibling nodes.
+The type inference logic is supplied as a concrete instantiation of
+\texttt{PropagatedValue}.
+
+The visitor methods correspond to the sections of Chapter~\ref{ch:typ}:
+\texttt{VisitRule} handles the rule-level structure, \texttt{VisitExpr} corresponds to
+the expression inference of Section~\ref{sec:expr-inference}, and \texttt{VisitTerm}
+corresponds to the term inference of Section~\ref{sec:term-inference}.
+In \texttt{VisitTerm}, the treatment of $\Undef$ follows the deviation described in Section~\ref{ss:ta:rep}: the $\Undef$ type is not accounted for.
+
+%% TODO: about undefs - they are not absent from the map. their behaviour is not registered by the type analysis
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{SMT Translation}
+\label{s:smt}
+%%=============================================================
+
+The SMT translation phase converts the compiled Rego module into a \smtlib{} formula, implementing the transformation described in Chapter~\ref{ch:trans}.
+Two supporting files provide the infrastructure on which the translation is built:
+\texttt{representation.go} defines the value and command representation ---
+\texttt{SmtValue}, \texttt{SmtProposition}, and \texttt{SmtCommand} --- used throughout, and \texttt{type\_translator.go} generates the bounded-depth \texttt{OTypeD<N>} sort declarations from the \texttt{TypeAnalyzer}.
+The orchestration of the three ordered passes is handled by \texttt{translator.go}, as described in Section~\ref{s:arch}.
+
+%%=============================================================
+\subsection{Function Encoding}
+\label{ss:smt:func}
+%%-------------------------------------------------------------
+
+The \texttt{Function} structure is the uniform abstraction over both built-in and
+user-defined functions, holding the function name, a list of argument types
+(\texttt{ArgType}), a result type, and a \texttt{callFn} responsible for generating
+the corresponding SMT call.
+The \texttt{ArgType} encodes both the Rego atomic type and the expected depth: built-in
+functions receive arguments unwrapped to depth $-1$ (raw SMT sort values), whereas
+user-defined functions operate at depth $0$.
+
+\texttt{GetBuiltinFuncMap()} provides the static mapping from Rego builtin function names to their \texttt{Function} structures.
+For the majority of operators, \texttt{mkSmtFunction()} produces a \texttt{callFn}
+that emits \texttt{(smtName arg$_1$ $\ldots$ arg$_n$)}.
+Equality and inequality are handled separately by \texttt{EqFunction} and
+\texttt{NeqFunction}, which use the depth-aware \texttt{SmtValue.Equals()} method
+to align both operands to a common depth before comparison.
+
+For user-defined functions, \texttt{NewFunction()} constructs a \texttt{Function} by
+reading the argument and result types from the corresponding \texttt{RegoTypeDef} in
+$\typof$, and reuses \texttt{mkSmtFunction()} with the function's own name as the SMT
+symbol.
+
+%%=============================================================
+\subsection{Expression Translation}
+\label{ss:smt:expr}
+%%-------------------------------------------------------------
+
+The \texttt{ExprTranslator} is the per-rule translation unit, carrying a
+\texttt{TransContext} that accumulates local variable bindings and generated SMT
+commands throughout the translation of a single rule body.
+Its main entry point, \texttt{BodyToSmt()}, iterates over the expressions of a rule
+body and returns a \texttt{SmtProposition} encoding their conjunction and a list of
+\texttt{varDef} records representing local variable let-bindings.
+
+Three cases are handled for each expression.
+A single-term expression is converted via \texttt{termToSmtValue()} and its
+holdability condition is appended to the conjunction, as described in
+Section~\ref{ss:expr:val} of Chapter~\ref{ch:trans}.
+A function call in assign form --- detected when the number of supplied arguments
+exceeds the declared function arity by one --- is resolved by calling the function on
+the leading arguments and recording the result as a let-binding for the trailing return
+variable.
+For the equality operator, the treatment is context-sensitive: if the left-hand
+variable has not yet been defined in the current body, the right-hand side is recorded
+as a let-binding; otherwise, an equality proposition is appended to the conjunction.
+
+%%-------------------------------------------------------------
+\subsubsection{Reference Navigation}
+%%.............................................................
+
+References of the form \texttt{input.*}, \texttt{data.*}, or
+\texttt{<package>.<var>} are resolved by \texttt{refToSmtValue()}, which identifies
+the base name and the remaining path, looks up the base type in $\typof$, and
+delegates to \texttt{GetSmtRef()} for path navigation.
+\texttt{GetSmtRef()} walks the path term by term, dispatching to
+\texttt{GetObjSelect()} or \texttt{GetArrSelect()} depending on the current type.
+
+For objects, \texttt{GetObjSelect()} distinguishes three key forms: a constant string
+key yields a direct field lookup; a variable key of type $\Str$ yields a dynamic
+select over the union of all field types; a reference key is resolved recursively.
+For arrays, \texttt{GetArrSelect()} accepts a constant integer index or a variable
+of type $\Int$.
+At each step, the accessed value is unwrapped from the composite depth to the depth
+of the selected element, maintaining sort consistency throughout the navigation.
+
+%%-------------------------------------------------------------
+\subsubsection{Literal Collections}
+%%.............................................................
+
+Constant object and array literals are encoded using the constant-array initialisation
+pattern described in Chapter~\ref{ch:trans}.
+Both \texttt{objectToSmt()} and \texttt{arrayToSmt()} first look up the type depth of
+the literal in $\typof$, initialise a constant array mapping every key to
+\texttt{OUndef} at depth $d{-}1$, and then apply a \texttt{store} operation for each
+key-value pair.
+Objects use \texttt{String} as the key sort; arrays use \texttt{Int}.
+Each stored value is wrapped to depth $d{-}1$ to match the declared element sort.
+
+%%=============================================================
+\subsection{Rule Translation}
+\label{ss:smt:rules}
+%%-------------------------------------------------------------
+
+The entry point for rule translation is \texttt{RuleToSmt()}, which dispatches on the
+rule type as determined by its structure.
+Default rules are not emitted as \smtlib{} commands; instead, their encoded value is
+stored via \texttt{SetDefaultValue()} as a fallback for later use.
+Function rules --- those whose head carries a non-empty argument list --- are emitted
+as \texttt{define-fun} declarations.
+Complete rules are emitted as \texttt{assert (= $h_n$ $v_h$)} assertions.
+
+The encoded value $v_h$ is produced by \texttt{ruleToSmtString()}, which constructs
+the expression \texttt{ite}$(\phi,\, v,\, \mathit{fallback})$ described in
+Section~\ref{ss:rules:body} of Chapter~\ref{ch:trans}.
+The body proposition $\phi$ and the list of local variable let-bindings are obtained
+from \texttt{BodyToSmt()}.
+Else chains are handled by recursive calls to \texttt{ruleToSmtString()}, with the
+innermost fallback supplied by \texttt{GetDefaultValue()}.
+The let-bindings are then wrapped around the \texttt{ite} expression in reverse order,
+so that each binding is in scope for all subsequent bindings and for the \texttt{ite}
+itself.
+
+\textit{As of writing, the support for multiple complete definitions (as specified in Section \ref{ss:rules:multi}) is yet to be implemented.}
