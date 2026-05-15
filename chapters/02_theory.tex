@@ -1,3 +1,5 @@
+% TODO: change name
+% TODO: forall / exists
 \chapter{Theory, Current State}
 \label{ch:theory}
 
@@ -9,8 +11,10 @@ In this chapter, we will lay down the knowledge foundation for the following tex
 % Rego
 %% OPA
 %% Language specifics
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Rego Policy Language}
 \label{sec:rego}
+%%=============================================================
 
 % TODO: revise after the chapter is done
 This section will focus on the Rego language, used for specifying policies for \emph{Open Policy Agent} (\emph{OPA}).
@@ -18,7 +22,9 @@ To fully understand the meaning and design choices of the language, we will firs
 We will then follow with describing the syntax, semantics and the core mechanics of the language itself.
 This section is heavily dependent on the specification of OPA found in \cite{opa:web}.
 
+%%=============================================================
 \subsection{Open Policy Agent}
+%%-------------------------------------------------------------
 
 OPA is a general-purpose policy engine designed to decouple policy decision making from application logic.
 Policy decision making refers to the evaluation of conditions that determine whether actions such as access requests, configuration changes, or deployment operations should be permitted or denied.
@@ -42,7 +48,9 @@ Client requests are transformed into queries to the OPA; we will often call thes
 The OPA then evaluates the query with respect to a policy specified in Rego and a JSON document representing the service data (e.g., list of permitted servers).
 In addition, as the process of authorizing a request (input) often heavily depends on databases connected to the service, OPA offers a way to integrate these \emph{data} into the specified policy.
 
+%%=============================================================
 \subsection{Syntax}
+%%-------------------------------------------------------------
 
 This section uses the EBNF metasyntax notation \cite{EBNF:web} briefly defined as follows:
 \begin{lstlisting}
@@ -84,10 +92,9 @@ With the above syntax, rules can be (more specifically) classified into:
   \item \emph{function definitions},
   \item \emph{set field definitions}.
 \end{itemize}
-The semantics of these rules will be thoroughly described in the following section \todo{ref}.
 
-% TODO:
-% ref, term, literal
+% The semantics of these rules will be thoroughly described in the following section \todo{ref}.
+
 The nonterminal \texttt{literal}, which forms rule body, is described with:
 \begin{lstlisting}
 literal   = ( some-decl | expr | "not" expr )
@@ -153,7 +160,9 @@ The figure \ref{fig:rego} ilustrates example Rego policy.
 This policy contains an \texttt{import} statement on line \ref{fig:rego:line:import}, set field definition rule on line \ref{fig:rego:line:set-rule}, default rule on line \ref{fig:rego:line:default}, and a variable definition rule on line \ref{fig:rego:alias-use}.
 Line \ref{fig:rego:line:ref} contains a \emph{quantified variable} declared over fields of \emph{reference} \texttt{data.permissions[role]}.
 
+%%=============================================================
 \subsection{Semantics}
+%%-------------------------------------------------------------
 
 % TODO: builtin functions
 
@@ -272,8 +281,10 @@ The described semantic principles form the basis for understanding how Rego poli
 
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{SMT Solving}
 \label{sec:smt}
+%%=============================================================
 
 % TODO
 %% What is complete, sound, ...
@@ -285,7 +296,9 @@ This involves looking at the basic functionality of SMT and a quick dive into th
 In adition, I will describe the \ziii SMT solver which is used in the implementation of this work to evaluate the SMT-LIB formulae.
 Since this solver allows reasoning over theories, which are not explicitly in the SMTLIB2 standart and which are essential to this work, they will also be discussed.
 
+%%=============================================================
 \subsection{Preliminaries}
+%%-------------------------------------------------------------
 
 \paragraph{SAT Solving.}
 The \emph{Boolean Satisfiability Problem}, categorized as an \emph{NP-complete} problem, decides whether given propositional formula $\phi$ has a solution.
@@ -293,8 +306,7 @@ In such case, we say that $\phi$ is \emph{satisfiable}, which can also be denote
 Otherwise, this formula is marked as $\unsat$.
 In computer science, deciding this problem is called \emph{SAT solving}, and tools for its automation are called \emph{SAT solvers}.
 
-%% TODO decidability?
-
+%%-------------------------------------------------------------
 \paragraph{Satisfiability Modulo Theories.}
 The defining problem of \emph{Satisfiability Modulo Theories} (\emph{SMT}) is checking whether a given (closed) logical formula $\phi$ is satisfiable, in the context of some background theory $\T$ which constrains the interpretation of the symbols used in $\phi$.\cite{smt:sm-theories, smt:first-ord-logic}
 Technically, the SMT problem for $\phi$ and $\T$ is the question of whether there is a model of $\mathcal{T}$ that makes $\phi$ true.
@@ -303,10 +315,10 @@ Technically, the SMT problem for $\phi$ and $\T$ is the question of whether ther
 What sets apart SMT from general automated deduction is that the background theory $\mathcal{T}$ need not be finitely or even first-order axiomatizable, and that specialized inference methods are used for each theory.
 By being theory-specific and restricting their language to certain classes of formulas (such as, typically but not exclusively, quantifier-free formulas), these specialized methods can be implemented in solvers that are more efficient in practice than general-purpose theorem provers.
 
+%%=============================================================
 %% SMT-LIB, theories, soundness, completeness
 \subsection{SMT-LIB}
-
-% TODO: projit
+%%-------------------------------------------------------------
 
 The \smtlib Standard is an international initiative and specification that defines a common language and infrastructure for interacting with SMT solvers.
 \smtlib aims to facilitate research, development, comparison, and benchmarking of SMT solvers by providing rigorous definitions of languages, theories, and interfaces used in the automated reasoning community.
@@ -335,9 +347,9 @@ Combined theories are defined implicitly in terms of basic theories by means of 
 The difference between a basic theory and a combined one in SMT-LIB is essentially operational.
 Some SMT-LIB theories, such as the theory of finite sets with a cardinality operator, are defined as basic theories, even if they are in fact a combination of smaller theories, because they cannot be obtained by modular combination.
 
-%% TODO quantifiers
-
+%%=============================================================
 \subsection{Z3}
+%%-------------------------------------------------------------
 
 \textit{The information about \ziii is taken from \cite{z3} and \cite{z3:web}.}
 
@@ -369,11 +381,13 @@ modularity. From a high-level point of view, \ziii integrates:
 A schematic overview of the structure of \ziii is shown in Figure~\ref{fig:z3-system-arch}.
 Essential components of \ziii are then described as follows:
 
+%%-------------------------------------------------------------
 \paragraph{Input.}
 It is possible to interact with \ziii using either a textual format or a binary API.
 As mentioned in \cite{z3:web} the textual input can appear in several different forms with the most notable one being SMTLIB2 format, which uses a LISP-like syntax.
 Programmatic interaction with this tool is possible through an API from Python, C, C++, Go, Java, and other languages.
 
+%%-------------------------------------------------------------
 \paragraph{Simplifier.}
 To offer the maximal performance, input formulas are first simplified in an incomplete, but efficient process.
 The simplify a formula, this component applies standard algebraic reduction rules.
@@ -381,14 +395,17 @@ For example $p \land true$ can be reduced to just $p$.
 In this process, the simplifier even tries to identify equational definitions (such as $x = 4$) within a context and using given definition, it then reduces the remaining formula.
 For example, $x = 4 \land q(x)$ can be this way reduced to $x = 4 \land q(4)$.
 
+%%-------------------------------------------------------------
 \paragraph{Compiler.}
 This component takes a simplified abstract syntax tree representation of the input formula and converts it into a different data structure.
 Such data structure comprises a set of clauses and congruence-closure nodes.
 
+%%-------------------------------------------------------------
 \paragraph{Atoms.}
 Atoms, or atomic formulas, are formulas, which cannot be further decomposed into simpler logical components.
 Atoms can be either equalities or theory specific atoms (for instance an arithmetical inequality).
 
+%%-------------------------------------------------------------
 \paragraph{Congruence Closure Core.}
 The congruence closure core receives truth assignments to atoms from the SAT solver.
 Such asserted equalities are then propagated using a data structure called E-graph, with nodes in such a graph pointing to one or more theory solvers.
@@ -397,15 +414,18 @@ The core also propagates the effects of the theory solvers.
 Such effects can range over inferred equalities to assignment of atoms to true or false.
 In the case of non-convex theories (i. e., theories for which quantifier elimination and other automated reasonings are complicated or impossible), the theory solvers can also produce fresh atoms.
 
+%%-------------------------------------------------------------
 \paragraph{Theory Solvers.}
 \ziii’s ability to solve constraints of a specific theory comes from its integration with a solver for given theory.
 These specialized solvers are called theory solvers or satellite solvers.
 As shown in the Figure \ref{fig:z3-system-arch}, solvers are used to produce new atoms for given assignment from the \ziii core, i.e., the congruence closure core.
 
+%%-------------------------------------------------------------
 \paragraph{E-matching Engine.}
 This engine is used reasoning over quantifiers, where \ziii combines a well known approach with new algorithms described in \cite{z3:e-match}.
 In this process, it operates over the E-graph data structures and passes generated clauses to the SAT solver.
 
+%%-------------------------------------------------------------
 \paragraph{SAT Solver.}
 \ziii leverages the power of state-of-the-art SAT solver which integrates standard search pruning methods.
 It is used to control boolean case splits generated by the \ziii core (sometimes with the extra step of E-matching).
@@ -415,16 +435,19 @@ It is used to control boolean case splits generated by the \ziii core (sometimes
 The components of \ziii offer a special set of tools and techniques which help the SMT
 solver stand out amongst others. The most significant being:
 
+%%-------------------------------------------------------------
 \paragraph{Deleting Clauses.}
 During quantifier instantiation, clauses containing new atoms are as a side-effect produced into the search space.
 When such clause is useless in closing branches, it is garbage collected together with its atoms and terms.
 Conflict clauses are not deleted, but retained as a side-effect.
 
+%%-------------------------------------------------------------
 \paragraph{Relevancy Propagation.}
 In practice, several atoms appearing in a goal of an SMT solver are irrelevant, or so called \emph{don’t cares}.
 For expensive theories, \ziii ignores such atoms and inference rules.
 To distinguish relevant atoms from don’t cares, \ziii uses algorithm described in \cite{z3:rele}.
 
+%%-------------------------------------------------------------
 \paragraph{Model Generation.}
 \ziii has the ability to produce models as part of the output.
 Such models assign values to the constants in the input and generate partial function graphs for predicates and function symbols.
@@ -436,70 +459,147 @@ It has remained with this title to this day, because of his stability, efficienc
 It also supports a variety of non-standart theories, such as Array theory.
 For these reasons, we have decided to focus the SMT code generation presented in the next chapters onto it.
 
+%%=============================================================
 \subsection{Supported Theories in Z3}
+%%-------------------------------------------------------------
 
-Even with its emphasis on modularity and ease of extension, \ziii supports most of the commonly used theories out-of-the-box.\footnote{
-  The list of all supported theories is interactively presented at \url{https://microsoft.github.io/z3guide/docs/theories/Arithmetic}, which was the main source for this passage.
+Even with its emphasis on modularity and ease of extension, \ziii supports most of
+the commonly used theories out-of-the-box.\footnote{
+  The list of all supported theories is interactively presented at
+  \url{https://microsoft.github.io/z3guide/docs/theories/Arithmetic}, which was the
+  main source for this passage.
 }
 The most relevant theories to this work are:
 
+%%-------------------------------------------------------------
 \paragraph{Uninterpreted Functions.}
-This term refers to functions that do not belong to the signature of any specific theory, and whose behavior is determined solely by the constraints imposed on their outputs.
+This term refers to functions that do not belong to the signature of any specific
+theory, and whose behavior is determined solely by the constraints imposed on their
+outputs.
 Constants are commonly declared as uninterpreted functions with no arguments.
 In \smtlib, such declaration looks as the following:
-
-\begin{center}
-    \fbox{\text{(declare-fun x () Int)}}
-\end{center}
+\begin{lstlisting}[language=SMT]
+(declare-fun x () Int)
+\end{lstlisting}
 which denotes a variable $x$ of the builtin integer type.
+Any Rego variable or user-defined function whose semantics is not fully determined
+by the encoding is naturally represented as an uninterpreted function symbol,
+with the policy body providing the only constraints on its output.
 
+%%-------------------------------------------------------------
 \paragraph{Arithmetic.}
 \ziii provides built-in support for integers (\texttt{Int}) and real numbers (\texttt{Real}).
 These correspond to their mathematical representations and are not limited by any fixed bit-width.
-Basic arithmetic operators are available using standard notation such as $+, -, *,$ etc.
+Basic arithmetic operators are available using standard notation such as
+$+, -, *,$ etc.
 For integer constants $a, b, c$, the relation $a < b + c$ is expressed as:
-\begin{center}
-    \fbox{\text{(assert (< a (+ b c)))}}
-\end{center}
+\begin{lstlisting}[language=SMT]
+(assert (< a (+ b c)))
+\end{lstlisting}
 Note that function and operator applications follow a prefix notation.
 
-\paragraph{Bit-vectors.}
-Bit-vectors represent numerical values as fixed-width sequences of bits, reflecting their representation in modern computer systems.
-Unlike most programming languages, \ziii does not distinguish between signed and unsigned values at the level of declaration, but instead provides different operations for each interpretation.
-The bit-width does not need to be a power of two; any positive integer is allowed.
-Bit-vector operations typically use the prefix \texttt{bv}, and constants are commonly written in binary (with prefix \texttt{\#b}) or hexadecimal (with prefix \texttt{\#x}) form.
-For example:
-\begin{center}
-    \fbox{\text{(assert (= \#x10 (bvadd \#x0a \#x06)))}}
-\end{center}
-expresses the equality between $16$ and $10 + 6$ in an 8-bit representation.
-
-\ziii also supports the \texttt{Float} type according to the IEEE standard.
-Operations in this domain are prefixed with \texttt{fp.}, such as \texttt{fp.add}, and are typically followed by a rounding mode specification.
-Many algebraic properties that hold for integers, reals, or bit-vectors—such as associativity of addition—do not necessarily hold for floating-point arithmetic.
-
-
+%%-------------------------------------------------------------
 \paragraph{Strings.}
-Z3 provides support for strings, including standard operations such as concatenation, length computation, substring search, and character access.
+\ziii provides support for strings, including standard operations such as
+concatenation, length computation, substring search, and character access.
 These operations are available under the \texttt{str.} prefix.
 For example, enforcing that two strings $a$ and $b$ have equal length can be written as:
-\begin{center}
-    \fbox{\text{(assert (= (str.len a) (str.len b)))}}
-\end{center}
+\begin{lstlisting}[language=SMT]
+(assert (= (str.len a) (str.len b)))
+\end{lstlisting}
 Regular expressions can be manipulated using operations with the \texttt{re.} prefix.
+The underlying decision procedure for the combined theory of strings and regular expressions used in \ziii is described in~\cite{smt:strings}.
 
-\subsubsection{Arrays.}
+%%-------------------------------------------------------------
+\paragraph{Arrays.}
 In SMT, an array is viewed as a total function from index sort $\tau_I$ to value sort $\tau_V$.
-Intuitively, an array assigns a value $e \in \tau_E$ to every index $i \in \tau_I$.
+Intuitively, an array assigns a value $e \in \tau_V$ to every index $i \in \tau_I$.
 
 Arrays support the basic operations \texttt{select/2} and \texttt{store/3} for reading and writing, respectively.
-These operations are defined by the standard McCarthy axioms\todo{ref}:
+These operations are defined by the standard McCarthy axioms~\cite{mccarthy:arrays}:
 \begin{itemize}
-\item $\text{select(store(A,i,v),i)} = v$
-\item $i \neq j \implies \text{select(store(A,i,v),j)} = \text{select(A,j)}$
-\item $(\forall_i: \text{select(A,i)} = \text{select(B,i)}) \implies A = B$
+  \item $\mathsf{select}(\mathsf{store}(A,i,v),i) = v$
+  \item $i \neq j \implies \mathsf{select}(\mathsf{store}(A,i,v),j) = \mathsf{select}(A,j)$
+  \item $(\forall_i: \mathsf{select}(A,i) = \mathsf{select}(B,i)) \implies A = B$
 \end{itemize}
-Additionally, constant arrays — where every key maps to the same value $v$ — can be defined using the function $K$:
+Additionally, constant arrays — where every key maps to the same value $v$ — can be
+defined using the function $K$:
 $$\forall_i: \text{select(K(v),i)} = v$$
-which is provided by \ziii by the \texttt{as const/2} operation, which takes the array type and a default value as arguments.
+which is provided by \ziii via the \texttt{as-const} operation, taking the array
+type and a default value as arguments.
+The decision procedure for the Array theory as implemented in \ziii is described
+in~\cite{z3:array-theory}.
+In the context of this work, the Array theory is used to model Rego objects —
+mappings from string keys to values — and Rego sets, which can be represented as
+arrays from an element sort to \texttt{Bool}.
 
+%%-------------------------------------------------------------
+\paragraph{Sequences.}
+While the Array theory models a collection as a total function on an infinite index
+domain, \ziii's Sequence theory models ordered, finite lists over an element sort
+$\tau$, written \texttt{(Seq $\tau$)}.
+Key operations include \texttt{seq.len} (length), \texttt{seq.nth} (indexed access),
+\texttt{seq.concat} (concatenation), \texttt{seq.contains}, and \texttt{seq.unit}
+(singleton constructor).
+For example, asserting that the first element of a sequence $s$ of integers equals
+$42$ is written:
+\begin{lstlisting}[language=SMT]
+(assert (= (seq.nth s 0) 42))
+\end{lstlisting}
+Notably, \ziii treats the \texttt{String} sort as the special case
+\texttt{(Seq Char)}, so strings and sequences share the same solver
+backend~\cite{smt:sequences}.
+
+%%-------------------------------------------------------------
+\paragraph{Algebraic Datatypes.}
+Algebraic datatypes (ADT) allow the declaration of discriminated union types,
+where a value belongs to exactly one of a set of named \emph{constructors}, each
+carrying zero or more typed fields.
+Without ADT support, encoding such a union requires manual type-tag predicates and
+explicit disjointness axioms; with \texttt{declare-datatype}, the solver enforces
+injectivity, disjointness, and exhaustiveness automatically~\cite{smt:adt-decision}.
+As a concrete illustration, consider an optional integer value:
+\begin{center}
+    \fbox{\text{(declare-datatype Optional ((None) (Some (value Int))))}}
+\end{center}
+This introduces two constructors (\texttt{None}, \texttt{Some}), a \emph{selector}
+\texttt{value} extracting the integer payload of \texttt{Some}, and
+\emph{constructor recognizers} \texttt{is-None} and \texttt{is-Some}.
+For example, \texttt{(assert (and (is-Some x) (> (value x) 0)))} constrains a term
+$x$ to a positive integer wrapped in \texttt{Some}; the selector \texttt{value} is
+well-defined precisely when \texttt{is-Some} holds, and unspecified otherwise.
+ADTs also support recursive definitions, which becomes relevant when modeling nested
+Rego structures such as arrays of objects.
+
+The quantifier-free fragment of the ADT theory is decidable~\cite{smt:adt-oppen}.
+The decision procedure~\cite{smt:adt-decision} is built on top of the congruence
+closure engine used for uninterpreted functions, extending it with three
+ADT-specific inference rules: \emph{injectivity} ($C(a) = C(b) \implies a = b$),
+\emph{disjointness} ($C(\ldots) \neq D(\ldots)$ for distinct constructors $C, D$),
+and \emph{acyclicity} (no term may equal one of its own proper subterms).
+Plain uninterpreted functions do not enforce any of these properties, so the
+extension is essential rather than merely cosmetic.
+
+%%-------------------------------------------------------------
+\paragraph{Quantifiers.}
+SMT formulas in the quantifier-free (QF) fragment are generally decidable for the
+theories considered in this work, but adding unrestricted quantifiers over infinite
+domains renders satisfiability undecidable in general~\cite{smt:mbqi}.
+\ziii addresses quantified formulas through two complementary mechanisms: the
+E-matching engine described in Section~\ref{sec:z3} (see \cite{z3:e-match}), which
+instantiates quantified formulas guided by pattern triggers, and Model-Based
+Quantifier Instantiation (MBQI)~\cite{smt:mbqi}, which provides a complete
+procedure for certain quantified fragments.
+
+%%-------------------------------------------------------------
+\paragraph{Theory Combination.}
+In practice, an SMT encoding of a Rego formula simultaneously uses Arithmetic,
+Strings, Sequences, Arrays, and Algebraic Datatypes.
+The Nelson--Oppen combination framework~\cite{smt:nelson-oppen} establishes that
+two theories sharing only the equality symbol, both of which are
+\emph{stably infinite}, can be combined with no loss of soundness or completeness.
+The correctness of this combination procedure is further analysed
+in~\cite{smt:tinelli-harandi}.
+\ziii's congruence closure core, described in Section~\ref{sec:z3}, is the practical
+realization of this framework, propagating equalities across the individual theory
+solvers transparently.
