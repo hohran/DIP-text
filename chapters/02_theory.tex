@@ -410,9 +410,9 @@ Without ADT support, encoding such a union requires manual type-tag predicates a
 explicit disjointness axioms; with \texttt{declare-datatype}, the solver enforces
 injectivity, disjointness, and exhaustiveness automatically~\cite{smt:adt-decision}.
 As a concrete illustration, consider an optional integer value:
-\begin{center}
-    \fbox{\text{(declare-datatype Optional ((None) (Some (value Int))))}}
-\end{center}
+\begin{lstlisting}[language=SMT]
+(declare-datatype Optional ((None) (Some (value Int))))
+\end{lstlisting}
 This introduces two constructors (\texttt{None}, \texttt{Some}), a \emph{selector}
 \texttt{value} extracting the integer payload of \texttt{Some}, and
 \emph{constructor recognizers} \texttt{is-None} and \texttt{is-Some}.

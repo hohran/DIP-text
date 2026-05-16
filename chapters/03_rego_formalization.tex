@@ -8,253 +8,165 @@ All examples of Rego policies are valid code, interpretable online at the offici
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 80%
 % variables, atomic values, composite values
-\section{Terms}
+\section{Terms and Values}
 \label{s:terms}
-%%=============================================================
 
-This section describes values viable in Rego and defines their type system.
+%%===
 
-%%=============================================================
-\subsection{Variables}
-%%-------------------------------------------------------------
-In OPA, the response document contains fields, which correspond to \emph{variables} specified in the respective Rego policy.
-These fields are key--value pairs, where the key is the name of given variable.
-Variable names are given by the regular expression $[\_a-zA-Z]\{\_a-zA-Z0-9\}^*$, with $\_$ being a reserved symbol for \emph{unnamed variables}.
-We denote the set of all variables with $\Vars$ and the set of Rego values with $\Vals$.
-In this paper, we will usually call variables $x,y$ or $z$ and denote values with $v_i$ for $i$ typically being a natural number,
+This section establishes the vocabulary of values, variables, and terms that \rego policies operate over.
+We define a substitution $\sigma$ mapping terms to their values; the rest of the chapter is built on this foundation.
 
-Let $\sigma_V: \Vars \to \Vals$ be a \emph{substitution} mapping variables to Rego values.
-We will sometimes abuse the notation of values in this paper by calling variables values.
-Calling variable $x$ a value, will hold the meaning of saying $\sigma_V(x)$.
+%%===
 
-Variables in Rego can be either \emph{global} or \emph{local}.
-Global variables are accessible throughout the whole policy, whereas local variables are rule-specific and do not appear in the output document.
-Even though, local variables can \emph{shadow} global variables on name collision, we will not distinguish much between them, since the internal Rego compiler of OPA renames all local variables to unique names.
-We denote the set of all global variables with $\Globals$ and the set of all local variables with $\Locals$.
+\subsection{Variables and Substitution}
+\label{ss:vars}
 
-%%=============================================================
-\subsection{Atomic and Composite Values}
-%%-------------------------------------------------------------
-In Rego, values of variables can be of the given types:
-\begin{itemize}
-  \item \emph{Strings}: Sequences of Unicode characters enclosed in double-quotes, such as \texttt{"abc"}.
-    \textit{Rego also supports prefixing strings with \$ symbol for creating so called template-string used for runtime interpolation, but we will not cover them in this work.}
+%%---
 
-  \item \emph{Numbers}: In Rego, this name, in accordance to the JSON format, represents either an unbounded whole number (\texttt{BigInt}), a whole 64-bit number or a floating-point number (64-bit double-precision as in IEEE 754).
-    \textit{Creating a value which overflows the maximum/minimum floating-point value yields a $\Null$.}
+A \emph{variable} is an identifier matching the regular expression $[\_a-zA-Z][\_a-zA-Z0-9]^*$.
+The symbol $\_$ alone is reserved as a placeholder for an \emph{unnamed variable}: a variable that is intentionally left unbound.
+We denote the set of all variable names with $\Vars$.
 
-  \item \emph{Booleans}: Either \true ($\top$) or \false ($\bot$) values.
+Variables in a \rego policy are either \emph{global} or \emph{local}.
+Global variables are accessible throughout the whole policy and their values compose the response document.
+Local variables are scoped to the rule in which they are declared.
+We write $\Globals \subset \Vars$ for the set of global variable names and $\Locals \subset \Vars$ for the set of local variable names, with $\Globals \cap \Locals = \emptyset$.
+The internal OPA compiler renames all local variables to unique names prior to evaluation, so name shadowing does not arise in the formalization.
 
-  \item \emph{Null}: A special $\Null$ value, which does not belong to any other domain of values.
-\end{itemize}
+We define the set of \rego \emph{terms} $\Terms$ to encompass literals, variables, references, and function calls.
+The central semantic object of this chapter is the \emph{substitution}
+$$\sigma : \Terms \to \Vals$$
+mapping each term to its value.
+The codomain $\Vals$ includes the special element $\Undef$, whose properties are defined in Section~\ref{ss:ref}.
+We call a term $t$ \emph{ground} (with respect to $\sigma$) if every variable occurring in $t$ is bound under $\sigma$; we call $t$ \emph{defined} if $\sigma(t) \neq \Undef$.
+Every defined term is ground, but a ground term may still be undefined — for example, when a reference accesses a missing key in a collection.
 
-For the rest of this paper, we will call the values of the above types \emph{atomic}.
-Rego also offers the support for \emph{composite types} (or composite values).
-We will call such values \emph{collections}, and they can be of the following three types:
+The restriction $\sigma_V = \sigma|_{\Globals}$ to global variable names is precisely the response document returned by OPA to the querying service.
 
-\paragraph{Arrays.}
-Arrays are 0-indexed sequences of $n$ values, noted as $[v_0,\dots,v_{n-1}]$.
-These arrays are \emph{heterogenous}, meaning that different values of an array do not have to be of the same type.
-$[ ]$ is the special case of \emph{empty array}.
+%%===
 
-\paragraph{Objects.}
-Object is a set of key--value pairs, noted as $\{v_{k_0}:v_{v_0},\dots,v_{k_n}:v_{v_n}\}$, where $n$ is its length.
-Both keys and values can be of any type (even composite).
-$\{\}$ is the special case of \emph{empty object}.
+\subsection{Values}
+\label{ss:vals}
 
-\paragraph{Sets.}
-In Rego, sets of values are noted as $\{v_0,\dots,v_n\}$ and they are also heterogenous.
-As $\{\}$ already denotes an empty object, Rego defines an empty set with \texttt{set()}.
+%%---
 
-To assign a value to a variable in Rego, the \texttt{:=} operation is typically used.\footnote{
-  The Rego language allows assigning values to variables with either the assign symbol (\texttt{:=}), or the unification symbol (\texttt{=}).
-  This paper only will only expect the prior version to be used, since it is the recommended option by the OPA reference \cite{opa:web}.
-}
-In this way, we can set out inference rules for variable values:
+The set $\Vals$ of \rego values is defined by the grammar:
+\begin{align*}
+v \;::=\;\;
+  & s \in \Str
+    & \text{(string literal)} \\
+  \mid\;\; & n \in \Int
+    & \text{(number)} \\
+  \mid\;\; & b \in \Bool
+    & \text{(boolean)} \\
+  \mid\;\; & \Null
+    & \text{(null)} \\
+  \mid\;\; & [v_0, \ldots, v_{n-1}]
+    & \text{(array)} \\
+  \mid\;\; & \{v_{k_1}{:}v_1, \ldots, v_{k_n}{:}v_n\}
+    & \text{(object)} \\
+  \mid\;\; & \{v_1, \ldots, v_n\}
+    & \text{(set)} \\
+  \mid\;\; & \Undef
+    & \text{(undefined)}
+\end{align*}
+
+Values of types $\Str, \Int, \Bool$, and $\Null$ are called \emph{atomic}; arrays, objects, and sets are called \emph{composite}.
+$\Undef$ is a distinguished element that does not belong to any of the above domains; its formal properties are given in Section~\ref{ss:ref}.
+The empty array is written $[\,]$, the empty object as $\{\}$, and the empty set as $\texttt{set()}$.
+All composite types in \rego are \emph{heterogeneous}: their elements and field values may be of different types.
+
+A \emph{literal} is a term whose value is determined syntactically.
+The substitution maps every literal to itself: $\sigma(\ell) = \ell$.
+A composite literal is evaluated element-wise; if any constituent term evaluates to $\Undef$, the entire composite literal evaluates to $\Undef$.
+
+A variable $x \in \Vars$ is \emph{bound} under $\sigma$ if $\sigma(x) \neq \Undef$ and \emph{unbound} otherwise.
+Assignment of a value to a variable is written $x \mathrel{:=} t$ and yields $\sigma(x) = \sigma(t)$:
 \[
-\textbf{(AssignLiteralValue)}\quad
+\textbf{(Assign)}\quad
 \inferrule{
-  x := v
+  x \mathrel{:=} t
 }{
-  \sigma_V(x) = v
-}
-\qquad
-\textbf{(AssignVarValue)}\quad
-\inferrule{
-  x := y
-}{
-  \sigma_V(x) = \sigma_V(y)
+  \sigma(x) = \sigma(t)
 }
 \]
+\rego provides two syntactic forms for assignment: the assign operator \texttt{:=} and the unification operator \texttt{=}\footnote{
+  The unification operator \texttt{=} only functions as an assignment for an undefined left-hand side and it behaves as an equality test otherwise.
+}.
+This work uses the assign form throughout, in line with the OPA reference~\cite{opa:web:ass}.
 
-\begin{figure}
-  \label{fig:values}
-  \begin{lstlisting}[language=Rego]
-package example
+%%===
 
-n := 42
-b := true
-s := "Hello"
-
-arr := [1,2,3]
-obj := { "n": n, "b": b }
-set := { n, b, s, true }
-\end{lstlisting}
-  \caption{Example Rego policy.}
-\end{figure}
-
-\begin{example}
-  Consider the Rego policy given in figure \ref{fig:values}.
-  The first line only specifies the policy package name and is not relevant in this case.
-  This policy contains atomic values $n, b, s$ and composite values $arr, obj$, and $set$.
-  The value $\sigma_V(n)$ is equal to $42$ and $\sigma_V(b) = true$.
-  The length of $set$ is $3$, since its two members, $b$ and $\true$, have the same value.
-\end{example}
-
-%%=============================================================
-% 99%
-\subsection{References and Undefined Values}
+\subsection{References}
 \label{ss:ref}
-%%-------------------------------------------------------------
 
-To access a value from collection, Rego supports a square bracket notation similar to other modern programming languages.
-It is noted as $x[v]$, i.e., the value of $x$ at key $v$.
-Since the input documents for policies are usually large and nested collections (typically objects), it is not unusual to see long chains of value such value accessing, such as $x[v_0]\dots[v_n]$.
-As these constructs are typical for this policy language, they have a special name: \emph{references}.
+%%---
 
-To simplify their use, Rego offers an alternative dot notation.
-This notation is used, when the reference accesses a collection with string literal.
-With this alternative, the reference
-$$ x["a"]["b"]["c"]["d"] $$
-is identical to
-$$ x.a.b.c.d $$
+A \emph{reference} is a term of the form $t[v]$, denoting access into the composite value of $t$ at key or index $v$.
+References may be chained: $t[v_1][v_2]\cdots[v_n]$ accesses a nested value.
+As syntactic sugar, $t\texttt{.}k$ abbreviates $t[\texttt{"k"}]$ when $k$ is a string literal identifier, so \texttt{x.a.b.c} is identical to \texttt{x["a"]["b"]["c"]}.
 
-Additionally, for a policy package $\pkg$ and a global variable $x$, which is defined in it, reference \texttt{data.$\pkg$.x} accesses the value $x$, i.e., $\sigma{\texttt{data.\textit{$\pkg$}.x}} = \sigma(x)$.
-In the compilation step of Rego execution, all global variables are transformed into this form.
-We use the notion of \emph{base} for the shortest prefix of a reference containing value in the given context.
+The value of a reference is defined recursively:
+\[
+\sigma(t[v]) \;=\;
+\begin{cases}
+  \Undef & \text{if } \sigma(t) = \Undef \text{ or } \sigma(v) = \Undef, \\
+  \sigma(t)\bigl(\sigma(v)\bigr) & \text{if } \sigma(v) \in \mathrm{dom}\bigl(\sigma(t)\bigr), \\
+  \Undef & \text{otherwise,}
+\end{cases}
+\]
+where $\sigma(t)(k)$ denotes the lookup of key $k$ in the value $\sigma(t)$ — array indexing for arrays and field access for objects.
+$\mathrm{dom}(v)$ then represents the set of all keys defined in a composite value $v$.
+A chained reference evaluates left-to-right; if any intermediate step yields $\Undef$, the entire reference is $\Undef$.
 
-It is also possible that given collection does not contain any value at the specified key, for which Rego reserves a special \emph{undefined} value.
-Such value has specific properties, similar to \texttt{NaN} value in other programming languages.
-The most relevant properties of this value is that two undefined values are not equal, and that all expression containing an undefined value are also undefined.
-This means that also object literals containing even a single undefined value are undefined.
+Two special roots exist in every evaluation context.
+The identifier \texttt{input} refers to the input document supplied by the querying service.
+The identifier \texttt{data} is the root of a hierarchical document that combines the service-provided data (for example, a role-to-permission mapping) with the namespaces of all loaded \rego packages.
+For a global variable $x$ defined in package $\pkg$, the reference \texttt{data.$\pkg$.x} and the bare name $x$ denote the same value within the same package: $\sigma(\texttt{data.\textit{$\pkg$}.x}) = \sigma(x)$.
 
-\begin{example}
-  Let \texttt{a = [1,2,3]} and \texttt{o = \{"a": a\}} be defined in the package $\pkg$.
-  Then the reference \texttt{o.a[0]} has value $1$ and references \texttt{o.b[0]} and \texttt{o.a[5]} are $\Undef$.
-  In addition, the values of \texttt{data.$\pkg$.a}, \texttt{a}, \texttt{data.$\pkg$.o.a}, and \texttt{o.a} are equal, and the base of \texttt{data.$\pkg$.o.a} is \texttt{data.$\pkg$.o}.
-\end{example}
+The element $\Undef$ has the following properties that distinguish it from all concrete values:
+\begin{itemize}
+  \item Equality between two undefined terms is itself undefined: $\Undef$ does not compare equal to $\Undef$.
+  \item Any expression containing a subterm that evaluates to $\Undef$ evaluates to $\Undef$.
+  \item $\Undef$ is distinct from $\Null$: $\Null$ is a concrete JSON value used to explicitly represent the absence of information (for example, passed as a function argument to signal that an optional parameter is not provided), whereas $\Undef$ means the term is entirely absent from the evaluation result.
+  \item undefined global variables do not appear in the output response document.
+\end{itemize}
 
-%%=============================================================
+%%===
+%% TODO: maybe change set type to contain values, instead of types
 \subsection{Type System}
-\label{s:typ}
-%%-------------------------------------------------------------
+\label{ss:types}
 
-Each value in Rego has its corresponding type.
-The set of \emph{Rego types} $\mathbb{T}$ is defined by the grammar:
+%%---
+
+Each value in $\Vals$ has a corresponding \emph{type}.
+Since \rego is dynamically typed, the type of every term is determined at runtime from the concrete value produced by $\sigma$.
+The set of \rego types $\Types$ is defined by the grammar:
 \begin{align*}
-\ty \;::=\; & \Str \mid \Int \mid \Bool \mid \Null \mid \Undef \mid \Unknown \\
-   \mid\;   & \ty_1 \cup \cdots \cup \ty_m \\
-   \mid\;   & \Array{\ty} \\
-   \mid\;   & \RegoSet{\ty} \\
+\ty \;::=\; & \Str \mid \Int \mid \Bool \mid \Null \mid \Undef \\
+   \mid\;   & \Array{\ty_0,\ldots,\ty_{n-1}} \\
+   \mid\;   & \RegoSet{\ty_1,\ldots,\ty_m} \\
    \mid\;   & \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}
 \end{align*}
-The intended meaning is standard:
+
+The intended meaning of each construct:
 \begin{itemize}
-  \item \emph{Atomic types} $\Str, \Int, \Bool, \Null$ correspond to atomic values in Rego; $\Undef$ is also considered an atomic type and it corresponds to a special value of the same name (similarly to $\Null$),
-  \item $\Unknown$ is a \emph{placeholder} type used when no information is available yet,
-  \item $\ty_1 \cup \cdots \cup \ty_m$ is a \emph{union} type, modelling values that may inhabit any of the member types.
-  \item $\Array{\ty}$ is an \emph{array type}, where $\ty$ is a union over all of its element types,
-  \item $\RegoSet{\ty}$ is a \emph{set type}, of elements of type $\ty$ (similarly to the array type),
-  \item $\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}$ is an \emph{object type} with fields $v_i \in \Vals$ typed $\ty_i$.
+  \item Atomic types $\Str, \Int, \Bool, \Null$ classify the corresponding atomic values;
+        $\Undef$ classifies the undefined element.
+  \item $\Array{\ty_0,\ldots,\ty_{n-1}}$ is an \emph{array type} of length $n$,
+        where $\ty_i = \typof(v_i)$ is the type of the element at index $i$.
+  \item $\RegoSet{\ty_1,\ldots,\ty_m}$ is a \emph{set type} whose element-type list
+        is itself unordered and duplicate-free: $\{\ty_1,\ldots,\ty_m\}$ is the set of
+        distinct types that appear among the elements, so $\typof(\{v_1,\ldots,v_k\}) =
+        \RegoSet{\typof(v_1),\ldots,\typof(v_k)}$ with duplicates removed.
+  \item $\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}$ is an \emph{object type}
+        with keys $v_i \in \Vals$ typed $\ty_i$.
 \end{itemize}
 
-% %%=============================================================
-% \subsection{Type System}
-% \label{s:typ}
-% %%-------------------------------------------------------------
-%
-% Each value in Rego has its corresponding type.
-% The set of \emph{Rego types} $\Types$ is defined by the grammar:
-% \begin{align*}
-%   \ty \;::=\; & \{\Str\} \mid \{\Int\} \mid \{\Bool\} \mid \{\Null\} \mid \{\Undef\} \\
-%    \mid\;   & \{\Array{\ty_1,\ldots,\ty_n}\} \\
-%    \mid\;   & \{\SArray{\ty}\} \\
-%    \mid\;   & \{\RegoSet{\ty}\} \\
-%    \mid\;   & \{\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}\} \\
-%    \mid\;   & \ty_1 \cup \ty_2
-% \end{align*}
-% With the intended meaning:
-% \begin{itemize}
-%   \item \emph{Atomic types} $\Str, \Int, \Bool, \Null$ correspond to atomic values in Rego; $\Undef$ is also considered an atomic type and it corresponds to a special value of the same name (similarly to $\Null$),
-%   \item $\Array{\ty}$ is an \emph{array type}, where $\ty$ is a union over all of its element types,
-%   \item $\RegoSet{\ty}$ is a \emph{set type}, of elements of type $\ty$ (similarly to the array type),
-%   \item $\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}$ is an \emph{object type} with fields $v_i \in \Vals$ typed $\ty_i$,
-%   \item $\ty_1 \cup \ty_2$ denotes \emph{union} of types $\ty_1$ and $\ty_2$; formally speaking a type $\ty$ is considered a union, iff $|\ty| \le 1$.
-% \end{itemize}
-
-%%=============================================================
-% 99%
-% TODO: functions?
-\subsection{Function Calls and Terms}
-\label{ss:term}
-%%-------------------------------------------------------------
-
-Rego has a handful of builtin \emph{functions} used for arithmetics, string and regex manipulation, aggregation of collections, graph operations, database queries, hashing, and much more.
-Each of these functions have a designated name, a list of allowed parameter types, and a return type.
-Some of the most common functions also support infix operators, such as $+, -, ==, \geq$, etc., but they are always rewritten to their function form (e.g., \texttt{plus(1,2)}) by the OPA compiler.
-
-All functions allow the return value to be directly assigned into a variable with providing its name as an additional parameter.
-We will call this an \emph{assign form} of a function.
-In this manner, the expression
-$$ x := 1 + 2 $$
-is equivalent to the assign form
-$$ \texttt{plus(1,2,x)} $$.
-The internal compiler of this language \cite{opa:git} prefers the latter option whenever possible.
-In this paper, we will prefer the first option for its ease of readability.
-
-Formally said, a Rego function is defined as a triplet $f = (f_N, f_P, f_R)$, where:
-\begin{itemize}
-  \item $f_N$ holds the function name
-  \item $f_P = \{(\ty_1,\dots,\ty_a) | a \in \Nat_0\}$ is a set of lists of parameter types, where $a$ is the function arity and $\ty_i \in \Types$ for $1 \leq i \leq a$,
-  \item $f_R \in \Types$ is the return type.
-\end{itemize}
-We denote the set of all functions with $\Funs$.
-
-In Rego, we use a special name \emph{term} for everything either holding a value, or being a function identifier.
-This includes literals (strings, objects, etc.), variables, references, and function calls.
-Recursively, both references and function calls are defined as a sequence of terms.
-For the rest of this paper, we will denote the set of all terms with $\Terms$ and the value substitution mapping terms to values with $\sigma$.
-
-For every function identifier $f$, we set $\sigma(f) = \Undef$.
-We set a special function $\sigma_F: \Terms \to \Funs$.
-Additionally, we declare a function $\typof: \Terms \to \Types$ mapping all terms to their corresponding types.
-
-\begin{example}
-  Consider the following Rego statement $\psi$:
-  \begin{center}
-    \texttt{x := [1, 2+3]}
-  \end{center}
-  The compiled version of such statement is
-    \texttt{x := [1, plus(2,3)]}
-  and it contains terms \texttt{x}, \texttt{1}, \texttt{plus}, \texttt{2}, \texttt{3}, \texttt{plus(2,3)}, \texttt{[1, plus(2,3)]} and a builtin function \texttt{plus}, where $\sigma_F(\texttt{plus}) = (\texttt{plus}, \{(\Int,\Int)\}, \Int)$.
-  $\psi$ gives $\sigma(x) = [1, 5]$, and thus $\typof(x) = \Array{\Int}$.
-\end{example}
-
-%%=============================================================
-% TODO: maybe move to different section?
-\subsection{Expressions}
-\label{s:exprs}
-%%-------------------------------------------------------------
-
-We briefly talked about expressions in the previous section, and now we will formally specify them.
-Expression $e$ is either a term\footnote{
-  Internally, expressions can be specifically set to be function calls, i.e., list of terms.
-} which is evaluated into a boolean value (\emph{term expression}), or a declaration of local variable (\emph{declaration expression}).
-Declared variable can be either \emph{assigned}, \emph{existentially quantified}, or \emph{universally quantified}.
-
-An expression of term $t$, is evaluated as \true (it \emph{holds}), iff the $\sigma(t) \notin \{\Undef,\bot\}$, and as \false otherwise.
-We denote the result of expression $e$ with $\Holds(e)$.
-In contrast with other modern programming languages, this also means that $\Null$ or an empty string are evaluates as \true.
+We write $\typof : \Terms \to \Types$ for the function mapping each term to its type,
+with $\typof(t) = \Undef$ whenever $\sigma(t) = \Undef$.
+The analysis of how $\typof$ is approximated from a policy without a concrete evaluation
+context is the subject of Chapter~\ref{ch:typ}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Rules}
