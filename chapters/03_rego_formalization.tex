@@ -102,16 +102,17 @@ This work uses the assign form throughout, in line with the OPA reference~\cite{
 
 %%---
 
-A \emph{reference} is a term of the form $t[v]$, denoting access into the composite value of $t$ at key or index $v$.
-References may be chained: $t[v_1][v_2]\cdots[v_n]$ accesses a nested value.
+A \emph{reference} is a term of the form $t[k]$, denoting access into the composite value of $t \in \Terms$ at key or index $k \in \Terms$.
+This definition allows references to be chained into terms of form $t[k_1][k_2]\cdots[k_n]$; for such a reference $r$, we define its \emph{base} $\RefBase(r) = t$ and its \emph{length} $|r| = n+1$ (counting in the base $t$).
 As syntactic sugar, $t\texttt{.}k$ abbreviates $t[\texttt{"k"}]$ when $k$ is a string literal identifier, so \texttt{x.a.b.c} is identical to \texttt{x["a"]["b"]["c"]}.
 
+% TODO: define dom
 The value of a reference is defined recursively:
 \[
-\sigma(t[v]) \;=\;
+\sigma(t[k]) \;=\;
 \begin{cases}
-  \Undef & \text{if } \sigma(t) = \Undef \text{ or } \sigma(v) = \Undef, \\
-  \sigma(t)\bigl(\sigma(v)\bigr) & \text{if } \sigma(v) \in \mathrm{dom}\bigl(\sigma(t)\bigr), \\
+  \Undef & \text{if } \sigma(t) = \Undef \text{ or } \sigma(k) = \Undef, \\
+  \sigma(t)\bigl(\sigma(k)\bigr) & \text{if } \sigma(k) \in \mathrm{dom}\bigl(\sigma(t)\bigr), \\
   \Undef & \text{otherwise,}
 \end{cases}
 \]
@@ -232,150 +233,321 @@ Additionally, an expression can introduce a local variable using an \emph{assign
 This form is only applicable when the function call is the entire right-hand side of an assignment $x \mathrel{:=} f(t_1, \ldots, t_n)$, rewritten as $f(t_1, \ldots, t_n, x)$ by the OPA compiler.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Rules}
-%%=============================================================
+\section{Policies and Rules}
+\label{s:rules}
+%%===
 
-Every Rego policy is comprised of a set of rules $\Rules$.
-Since it is a declarative language, we can truly treat specified rules as a set without a strict order.
-Every rule $\Rule$ consists of a \emph{rule head} ($h$) and a list of \emph{rule bodies} ($B$), where the head specifies which term (non-literal) is set, and the body specifies a value to which it is set, and conditions (expressions) which need to be met for this assignment to be valid.
+A \rego \emph{policy} is a finite set of rules $\Rules$ defined over a fixed package $\pkg$.
+Every rule in $\Rules$ specifies a condition under which a particular term receives a value.
+This section formalizes the structure of rules, their semantics, and the conditions under which a policy is consistent.
+%%===
 
-%%=============================================================
+\subsection{Policies and Evaluation Context}
+\label{ss:policy}
+
+%%---
+
+An \emph{evaluation context} is a pair $(\mathtt{input}, \mathtt{data})$ of ground JSON values, corresponding to the two documents supplied to OPA at query time (Figure~\ref{fig:opa-query-graph}).
+Evaluating a policy $\Rules$ in context $(\mathtt{input}, \mathtt{data})$ produces a substitution $\sigma : \Terms \to \Vals$ satisfying all rules in $\Rules$; the formal conditions on $\sigma$ are developed in the subsections that follow.
+
+The \emph{response document} is the restriction $\sigma_V = \sigma|_{\Globals}$, mapping each global variable name to its value.
+Global variables for which no rule produces a result are absent from $\sigma_V$ — their value is $\Undef$ — unless a default rule provides a fallback (Section~\ref{ss:default}).
+
+For a term $t \in \Terms$, we write $P_t \subseteq \Rules$ for the set of all rules whose head refers to $t$.
+
+%%===
+
 \subsection{Rule Head and Body}
-%%-------------------------------------------------------------
+\label{ss:head-body}
 
-Head $h$ is defined as a tuple $(h_n, h_k, h_a)$, where $h_n \in \Terms$ denotes its name, $h_k \in (\Terms \cup \Undef)$ denotes its \emph{key}, and $h_a = (a_1,\dots,a_n)$ is a (possibly empty) list of arguments for $n \in \Nat$.
-We will often abuse the notation, and call variables heads.
-For a rule with head $h = (h_n, h_k, h_a)$ we define a set of rules
-We denote a rule with head $h$ as \emph{rule of $h$} and declare a set of all rules of $h$ as $P_h$.
+%%---
 
-We define body $B$ as a pair $(B_v,B_E)$, where $B_v \in \Terms$ is its value, and $B_E = (e_1,\dots,e_n)$ for $1 \leq i \leq n$ and $e_i$ being an expression.
-When all expressions of rule body $B$ hold, we say that it is \emph{satisfied}, denoted as $\Holds(B)$.
-Formally said, for a rule body $B$: 
-$$\Holds(B) \iff \forall_{e \in B_E}: \Holds(e)$$.
-Rules are defined as pairs $(h,B)$.
+A \emph{rule head} $h$ is a structure from which we extract the following components:
+\begin{itemize}
+  \item $\RuleRef(h) \in \Terms$: the \emph{reference} of the head, identifying the term the rule contributes to.
+    For complete and function rules, this is a single variable term; for accumulating object rules, this is a chained reference (e.g., \texttt{y.a.b}) identifying the object being built.
+  \item $\RuleKey(h) \in \Terms \cup \{\Undef\}$: the \emph{key} contributed by this rule to $\RuleRef(h)$.
+  \item $\RuleArgs(h) = (a_1, \ldots, a_n)$: the \emph{argument list}, empty for non-function rules.
+  \item $\RuleDef(h) \in \{\top,\bot\}$: a boolean indicator of a \emph{default definition}, also called a \emph{fallback}.
+\end{itemize}
 
-Every rule is written as $h$ $B_1$ \texttt{else} $\dots$ \texttt{else} $B_n$, with $h$ being the head and $B_i$ being the bodies, for $1 \leq i \leq n$, formally noted as a tuple $(h,B)$, where $B$ is the list of bodies $(B_1,\dots,B_n)$.
-A body is written as a value possibly followed by either as a single expression $e$, or as $\{ e_1 \dots e_n \}$, where expression $e_i$ and $e_{i+1}$ are separated either by a semicolon (\texttt{;}) or a newline character, for $1 \leq i \le n$.
-If the value of body $B$ is missing, it is implicitly \true.
-If the body does not contain any expressions, it is automatically evaluated as valid.
-In adition, the rule body $B_i$ is only evaluated if none of its \emph{predecessors} was satisfied, i.e., iff $\neg\exists_{j \in (0,i)}: $
+In addition, we define the \emph{name of head $h$} as $\RuleName(h) = \RefBase(\RuleRef(h))$, i.e., the first term (variable) in the head reference.
+For example, consider a rule \texttt{x.a.b := 1} with head $h$: $\RuleRef(h) = \texttt{x.a.b}$ and $\RuleName(h) = \texttt{x}$.
+
+The type of a rule is determined by its head accessors as follows:
+\begin{itemize}
+  \item $\RuleKey(h) = \Undef$, $\RuleArgs(h) = ()$, $|\RuleRef(h)| = 1$:
+        a \emph{complete definition} — assigns a single value to the global variable $\RuleRef(h)$,
+  \item $\RuleKey(h) \in \Terms$, $\RuleArgs(h) = ()$:
+        a \emph{set accumulating definition} — contributes one element to the set $\RuleRef(h)$,
+  \item $\RuleKey(h) = \Undef$, $\RuleArgs(h) = ()$, $|\RuleRef(h)| > 1$:
+        an \emph{object accumulating definition} — assigns a value to a nested location within the object identified by the prefix of $\RuleRef(h)$,
+  \item $\RuleArgs(h) \neq ()$: a \emph{function definition} — defines a mapping from $\RuleArgs(h)$ to a value,
+  \item $\RuleDef(h) = \true$: a \emph{default rule} — provides a fallback value for $\RuleRef(h)$ when no other rule applies; in such case $\RuleKey(h) = \Undef$.
+\end{itemize}
+The cases for $\RuleKey(h)$ and $\RuleArgs(h)$ are mutually exclusive: a rule cannot simultaneously be a function definition and an accumulating definition.
+Each type is treated in its own subsection below.
+
+A \emph{rule body} $B$ is a pair $(B_v, B_E)$, where:
+\begin{itemize}
+  \item $B_v \in \Terms$ is the \emph{value} the body contributes to the head; when absent from the source, $B_v = \true$,
+  \item $B_E = (e_1, \ldots, e_m)$ is an ordered list of expressions forming the body condition.
+\end{itemize}
+
+A body $B$ is \emph{satisfied}, written $\Holds(B)$, iff every expression in $B_E$ holds:
+$$\Holds(B) \iff \forall_{e \in B_E} : \Holds(e)$$
+When $B_E$ is empty, $B$ is satisfied unconditionally.
+
+A \emph{rule} is a pair $(h, \mathbf{B})$ where $\mathbf{B} = (B_1, \ldots, B_k)$ is an ordered list of bodies connected by \texttt{else}.
+Body $B_i$ is only evaluated if no predecessor $B_j$ with $j < i$ was satisfied, i.e.:
+$$\Holds(B_i) \text{ is considered only if } \forall_{j < i} : \neg\Holds(B_j)$$
+
+For convenience purposes, we abuse the notation of rule head's components $\RuleRef,\RuleDef,\RuleArgs, and \RuleName$ to be applicable to rules, since each rule only contains a single head; formally said, for $r = (h,\mathbf{B})$ we define:
+\begin{align*}
+  \RuleRef(r) &= \RuleRef(h) \\
+  \RuleDef(r) &= \RuleDef(h) \\
+  \RuleArgs(r) &= \RuleArgs(h) \\
+  \RuleName(r) &= \RuleName(h)
+\end{align*}
+
+Given head $h$, we define the set $\Rules_h \subseteq \Rules$ called \emph{rules of $h$} as the maximum set $\{(h',\mathbf{B})|\RuleName(h) = \RuleName(h')\}$.
+Informally said, for a head $h$, rules of $h$ form a set of all rules with heads of the same name as $h$.
 
 \begin{figure}
-  \label{f:e:body}
-  \caption{Example of Rego policy with two rules containing different types of bodies.}
-\begin{lstlisting}[language=Rego]
-policy example
+  \label{fig:ex:auth}
+  \begin{lstlisting}[language=Rego,escapechar=|]
+package authentication
 
-x if 1 < 2
-y := 1 if {
-  z := true
-  x == z
-} else := 2
+has_role(user, role) if { |\label{ex:has_role}|
+  role in data.roles[user]
+}
+
+allowed_actions contains action if { |\label{ex:allowed}|
+  some role in data.roles[input.user]
+  some action in data.role_actions[role]
+}
+
+audit.user   := input.user |\label{ex:audit:user}|
+audit.action := lower(input.action) |\label{ex:audit:action}|
+
+default allow := false |\label{ex:default}|
+
+allow if { |\label{ex:allow}|
+  audit.action in allowed_actions
+} else if {
+  has_role(audit.user, "admin")
+}
 \end{lstlisting}
+  \caption{Example \rego authentication policy.}
 \end{figure}
 
 \begin{example}
-  For example, consider the Rego policy $\phi$ depicted in figure \ref{f:e:body}.
-  $phi$ contains two rules, one being the rule of $x$ and the other being the rule of $y$, meaning $|P_x| = |P_y| = 1$.
-  The rule of $x$ contains a single body, which assigns it \true, iff the expression $1 < 2$ holds, which it does, since it is neither $\Undef$, nor \false.
-  Thus $\sigma(x) = \true$.
-
-  The rule of $y$ contains two bodies, where the first one assigns $1$ to the head $y$ if its two expressions hold: 1) declaration of local variable $z$, which is assigned to be \true (declaration always holds), and 2) comparison of equality between $x$ and $z$, where $\sigma(x) = \sigma(z) = \true$ and thus it also holds.
-  The second body, which would unconditionally assign the value of its only body ($2$) to the head, is not evaluated, since the conditions of its predecessor were satisfied.
+  Consider the policy from Figure~\ref{fig:ex:auth}.
+  The rules on lines~\ref{ex:audit:user} and~\ref{ex:audit:action} are object accumulating
+  definitions: both have $\RuleKey(h) = \Undef$, $|\RuleRef(h)| = 2$, and $\RuleName(h) = \texttt{audit}$,
+  so they collectively build the object $\sigma(\texttt{audit})$ from two unconditionally satisfied contributions.
+  The rule on line~\ref{ex:allowed} is a set accumulating definition with
+  $\RuleKey(h) = \texttt{action}$, contributing one element per satisfied binding.
+  The rule on line~\ref{ex:has_role} is a function definition with
+  $\RuleArgs(h) = (\texttt{user}, \texttt{role})$.
+  The rule on line~\ref{ex:allow} is a complete definition containing two bodies (separated by \texttt{else}); if both bodies would not be satisfied, the variable specified in the head -- \texttt{allow} -- would be assigned the fallback value \false as defined on line~\ref{ex:default}.
 \end{example}
 
-%%=============================================================
-\subsection{Types of Rules}
-%%-------------------------------------------------------------
+\subsection{Complete Definitions}
+\label{ss:complete}
 
-Rego offers multiple different types of rules:
-%%-------------------------------------------------------------
-\subsubsection{Complete definitions.}
-\emph{Complete definitions} (or \emph{complete rules}) define the whole value of rule head.
-The rules in the prior example given in figure \ref{f:e:body} were all complete, since they assigned the values of their bodies directly into the head.
-For such rules, we infer the value of the head with:
+%%---
+
+A rule $(h, \mathbf{B}) \in \Rules$ is a \emph{complete definition} when $\RuleKey(h) = \Undef$,
+$\RuleArgs(h) = ()$, $|\RuleRef(h)| = 1$, and $\RuleDef(h) = \bot$.
+It assigns a single value to the global variable $\RuleRef(h)$: the value $\sigma(B_{i,v})$
+of the first body $B_i \in \mathbf{B}$ whose conditions are satisfied.
 \[
-\textbf{(CompRuleVal)}\quad
+\textbf{(CompRule)}\quad
 \inferrule{
-  (h,B) \in \Rules
+  (h, \mathbf{B}) \in \Rules \\
+  \Holds(B_i) \qquad \forall_{j < i} : \neg\Holds(B_j)
 }{
-  \Holds(B) \implies \sigma(h) = B_v
+  \sigma\bigl(\RuleRef(h)\bigr) = \sigma(B_{i,v})
 }
 \]
-A \emph{conflict} happens, when two different rules try to assign a different value to the same head, yielding the whole policy \emph{invalid}.
+where $h$ satisfied the mentioned constraints for a complete definition.
+When no body in $\mathbf{B}$ is satisfied, this rule contributes no value to $\RuleRef(h)$;
+another rule in $\Rules_h$ may still do so, or a default rule provides a fallback
+(Section~\ref{ss:default}).
+If multiple rules in $\Rules_h$ have their conditions satisfied with differing values,
+the policy is inconsistent; this is treated in Section~\ref{ss:consistency}.
 
-%%-------------------------------------------------------------
-\subsubsection{Incremental definitions.}
-% Sets
-% Objects (conflicts)
-\emph{Incremental definitions}, (or \emph{incremental rules}) define different parts (\emph{keys}) of the same head for each rule.
-Going back to the definition of rule head $h = (h_n,h_k,h_a)$, for incremental rules, $h_k \in \Terms$ and $h_a = ()$, i.e., its key is defined and its list of arguments is empty.
+\begin{example}
+  The rule on line~\ref{ex:allow} of Figure~\ref{fig:ex:auth} is a complete definition
+  for \texttt{allow} with $\mathbf{B} = (B_1, B_2)$.
+  $B_1$ checks whether the audited action is permitted; $B_2$ is the \texttt{else} clause
+  delegating to \texttt{has\_role}.
+  Since $|\mathbf{B}| > 1$, the \texttt{else} semantics apply: $B_2$ is only considered
+  when $\neg\Holds(B_1)$.
+\end{example}
 
-Incremental rules are applicable for sets with special \texttt{contains} keyword (omitting rule body values) followed by the key and for objects with the head beign a reference, where only the last term is considered a key.
-They are not applicable to arrays, as they need to be defined only with complete rules.
-With incremental rules, a conflict can occur when two rules assign different values to the same key, which can effectively only happen for objects.
+%%===
 
-For terms $t,k \in \Terms$, providing an incremental rule for value $t$ at key $k$ is possible, iff $t$ is not defined completely by any other rule.
-In this case, we not only say that $t$ is defined incrementally, but also that the value $t[k]$ is defined completely.
+\subsection{Accumulating Definitions}
+\label{ss:accum}
 
-For a policy $\psi$, we note the set of all heads defined incrementaly as $\Inc$ and the set of all heads with a complete defintion as $\Comp$.
-Since single head $h$ can be defined either completely or incrementally, we can say that $(h \in \Comp) \iff (h \notin \Inc)$.
+%%---
 
-\begin{figure}
-  \label{f:e:inc}
-  \caption{Example Rego policy containing incremental rules.}
-\begin{lstlisting}[language=Rego,escapechar=|]
-package example.incremental
+Rather than assigning a single value, accumulating definitions each contribute one element
+to a collection associated with $\RuleName(h)$.
+The final value is assembled from the contributions of all rules in $\Rules_h$ whose
+conditions are satisfied.
+Accumulating definitions take two forms.
 
-x contains 1 |\label{inc:x1}|
-x contains 2 if true |\label{inc:x2}|
-
-y.a.b.c := false |\label{inc:y}|
-# y := { "d": false } |\label{inc:y_}|
-
-z[v] := true if { 
-  some v in x 
-  v > 1
+\paragraph{Set accumulation.}
+A rule is a \emph{set accumulating definition} when $\RuleKey(h) \in \Terms$ and $\RuleArgs(h) = ()$.
+The element $\sigma(\RuleKey(h))$ is contributed to the set $\sigma(\RuleRef(h))$:
+\[
+\textbf{(AccSet)}\quad
+\inferrule{
+  (h, \mathbf{B}) \in \Rules \\
+  \Holds(B_i) \qquad \forall_{j < i} : \neg\Holds(B_j) \\
+  \sigma\bigl(\RuleKey(h)\bigr) \neq \Undef
+}{
+  \sigma\bigl(\RuleKey(h)\bigr) \;\in\; \sigma\bigl(\RuleRef(h)\bigr)
 }
+\]
+where $h$ satisfies the constraints for a set accumulating definition.
+The value of $\sigma(\RuleRef(h))$ is the set of all contributions across $\Rules_h$.
+Set accumulation is always conflict-free: distinct elements are collected and duplicate
+contributions are idempotent.
+
+\paragraph{Object accumulation.}
+A rule is an \emph{object accumulating definition} when $\RuleKey(h) = \Undef$,
+$\RuleArgs(h) = ()$, and $|\RuleRef(h)| > 1$.
+The chained reference $\RuleRef(h)$ identifies a nested location: its prefix is the
+object being assembled and its last term is the key at which the value is stored.
+The value $\sigma(B_{i,v})$ is assigned to that location:
+\[
+\textbf{(AccObj)}\quad
+\inferrule{
+  (h, \mathbf{B}) \in \Rules \\
+  \Holds(B_i) \qquad \forall_{j < i} : \neg\Holds(B_j)
+}{
+  \sigma\bigl(\RuleRef(h)\bigr) = \sigma(B_{i,v})
+}
+\]
+where $h$ satisfies the constraints for an object accumulating definition.
+The object identified by the prefix of $\RuleRef(h)$ is assembled from all contributions
+across $\Rules_h$.
+A conflict arises when two rules assign different values to the same nested location;
+this is treated in Section~\ref{ss:consistency}.
+
+\begin{example}
+  In Figure~\ref{fig:ex:auth}, the rule on line~\ref{ex:allowed} is a set accumulating
+  definition with $\RuleRef(h) = \texttt{allowed\_actions}$ and $\RuleKey(h) = \texttt{action}$.
+  The body is evaluated once per binding of \texttt{role} and \texttt{action},
+  contributing each resulting value of \texttt{action} as an element of
+  $\sigma(\texttt{allowed\_actions})$.
+  The rules on lines~\ref{ex:audit:user} and~\ref{ex:audit:action} are object accumulating
+  definitions with $\RuleName(h) = \texttt{audit}$ and $|\RuleRef(h)| = 2$.
+  Both bodies are unconditionally satisfied, contributing two key-value pairs that
+  together form $\sigma(\texttt{audit})$.
+\end{example}
+
+\subsection{Function Definitions}
+\label{ss:fun-rules}
+
+%%---
+
+A rule $(h, \mathbf{B}) \in \Rules$ is a \emph{function definition} when $\RuleArgs(h) = (a_1, \ldots, a_n)$
+is non-empty.
+The arguments $a_i \in \Terms$ act as patterns: when the function is called with concrete
+values, each $a_i$ is unified with the corresponding argument, producing local bindings
+under which the body is evaluated.
+The semantics is otherwise identical to a complete definition — the first satisfied body
+$B_i$ determines the return value, and the \texttt{else} chain applies.
+
+User-defined functions enter $\sigma_F$ (as defined is Section~\ref{ss:functions}) through their rules: for a function name $f$
+defined by rules, $\sigma_F(f)$ is constructed from the argument patterns $\RuleArgs(h)$
+and the rule bodies, with the argument type set $A$ derived from the types of the patterns.
+This connects function definitions back to the formal definition of functions in
+Section~\ref{ss:functions}.
+
+\begin{example}
+  The rule on line~\ref{ex:has_role} of Figure~\ref{fig:ex:auth} is a function definition
+  with $\RuleArgs(h) = (\texttt{user}, \texttt{role})$.
+  When called as $\texttt{has\_role}(\texttt{audit.user},\, \texttt{"admin"})$,
+  the arguments are unified with \texttt{user} and \texttt{role} respectively,
+  and the body \texttt{role in data.roles[user]} is evaluated under those bindings.
+\end{example}
+
+%%===
+
+\subsection{Default Rules}
+\label{ss:default}
+
+%%---
+
+A rule $(h, \mathbf{B}) \in \Rules$ is a \emph{default rule} when $\RuleDef(h) = \top$.
+It provides a fallback value for $\RuleRef(h)$ when no other rule in $\Rules_h$ contributes
+a value.
+The \rego language enforces default rules to contain a single body $(v,())$, where $v \in \Vals$, i.e., given value must be constant and there are no conditions for the body.
+Furthermore, given any rule head $h$, at most one default rule is allowed in $\Rules_h$; formally said:
+$$\forall r,r' \in \Rules_h: \RuleDef(r) \implies (\neg\RuleDef(r') \lor r = r')$$
+
+We define $\Def : \Terms \to \Vals$ mapping each head reference to its default value,
+with $\Def(t) = \Undef$ when no default rule exists for $t$.
+The semantics is:
+\[
+\sigma\bigl(\RuleRef(h)\bigr) = \Def\bigl(\RuleRef(h)\bigr)
+\quad \iff \quad
+\forall\,(h', \mathbf{B}') \in \Rules_h \setminus \{(h,\mathbf{B})) :
+\forall\, B'_i \in \mathbf{B}' : \neg\Holds(B'_i)
+\]
+Without a default rule, a head whose no other rule applies is $\Undef$ and absent from
+the response document.
+With a default rule, the head always carries a defined value.
+Default rules are applicable only to complete definitions and are allowed at most once
+per head.
+
+\begin{example}
+  The rule on line~\ref{ex:default} of Figure~\ref{fig:ex:auth} sets
+  $\Def(\texttt{allow}) = \false$.
+  If neither body of the \texttt{allow} rule on line~\ref{ex:allow} is satisfied,
+  $\sigma(\texttt{allow}) = \false$ rather than $\Undef$, ensuring \texttt{allow}
+  always appears in the response document.
+\end{example}
+
+%%===
+
+\subsection{Consistency}
+\label{ss:consistency}
+
+%%---
+
+A policy $\Rules$ is \emph{consistent} in a given evaluation context if no two rules
+in $\Rules$ contribute differing defined values to the same location.
+Let $v(h, \mathbf{B})$ denote the value contributed by the first satisfied body of
+$(h, \mathbf{B})$, or $\Undef$ if none is satisfied.
+Consistency then requires:
+\begin{gather*}
+  \forall\,(h_1,\mathbf{B}_1),(h_2,\mathbf{B}_2) \in \Rules,\;
+  \RuleRef(h_1) = \RuleRef(h_2)\;: \\
+  v(h_1,\mathbf{B}_1) = v(h_2,\mathbf{B}_2)
+  \;\lor\;
+  \Undef \in \bigl\{v(h_1,\mathbf{B}_1),\, v(h_2,\mathbf{B}_2)\bigr\}
+\end{gather*}
+Set accumulation is always conflict-free: multiple rules contributing the same element
+are idempotent and distinct elements are simply collected.
+When inconsistency is detected in the current evaluation context, OPA reports it as a
+runtime error.
+
+\begin{example}
+  Consider two complete definitions for \texttt{allow}:
+  \begin{lstlisting}[language=Rego]
+allow := true  if { input.role == "editor" }
+allow := false if { input.role == "editor" }
 \end{lstlisting}
-\end{figure}
-
-\begin{example}
-  Consider the policy $\phi$ given in figure \ref{f:e:inc}.
-  $\phi$ contains two incremental rules regarding $x$ on lines \ref{inc:x1} and \ref{inc:x2}, with keys $1$ and $2$ respectively.
-  From these rules, we can infer $x$ to be a set, containing both keys, since the first one is contained automatically, since the body of this rule is empty, and for the second one, all expressions from its body hold.
-
-  Line \ref{inc:y} contains a rule, which completely defines \texttt{y.a.b.c} to be \false, whilst incrementally defining \texttt{y.a.b} on key \texttt{c}.
-  This means that also \texttt{y} and \texttt{y.a} are defined incrementally, and introducing their complete definition, e.g., uncommenting line \ref{inc:y_} would cause a collision.
-
-  The last rule incrementally defines \texttt{z} on a variable key \texttt{v}.
-  In the body of this rule, we see a two expressions: 1) a declaration of an existentially quantified variable $v$ over fields of $x$, and 2) a constraint on this variable.
-  Informally speaking, this rule says: \textit{\texttt{z} contains any element of \texttt{x} which is greater than 1}.
-
-  Evaluating all rules gives the value mapping $\sigma(x) = \{1,2\}$, $\sigma(y) := \{"a": \{"b": \{"c": \false\}\}\}$, and $\sigma(z) = \{1: \true\}$.
-  Thus, the response document would contain three fields representing these variables.
+  When \texttt{input.role} is \texttt{"editor"}, both bodies are satisfied with
+  differing values $\true$ and $\false$, so $v(h_1, \mathbf{B}_1) \neq v(h_2, \mathbf{B}_2)$
+  and neither is $\Undef$ — a conflict.
+  Replacing the second rule with \texttt{allow := true} resolves the conflict, since
+  both rules now agree on the contributed value.
 \end{example}
-
-%%-------------------------------------------------------------
-% TODO
-\subsubsection{Function Definitions.}
-Rules can serve to define custom functions.
-In this case, the argument list $h_a = (a_1,\dots,a_n)$ of given head is non-empty, for $n \in \Nat, 0 \leq i \leq n$ and $a_i \in \Terms$.
-Functions then behave the same as complete definitions, with each argument $a_i$ being a local variable for the given rule, which is set at runtime with each function call.
-These user-defined functions allow % TODO TODO TODO
-User-defined Rego functions allow for declaration with concrete arguments.
-
-%%-------------------------------------------------------------
-% FIXME: default values for functions
-\subsubsection{Default Rules.}
-Default rule sets a fallback value $v$ for head $h$, where $\Rules_h \in \Comp$, meaning $\sigma(h) = v$, iff $\forall_{(h,B)}: \neg\exists_{b \in B}: \Holds(b)$.
-We define a new function $\Def: \Terms \to \Vals$ mapping every head $h$ to its \emph{default} value $\Def(h)$.
-Default rules are applicable at most once, only for heads with complete definition.
-If a given head $h \in \Comp$ does not have a default rule, we set $\Def(h) = \Undef$.
-
-\begin{example}
-  
-\end{example}
-% TODO: example
-
-

@@ -1,12 +1,12 @@
 % TODO: change name
 % TODO: forall / exists
-\chapter{Theory, Current State}
+\chapter{Rego Policies and SMT Solving}
 \label{ch:theory}
 
-% Introduction - what in this chapter
-In this chapter, we will lay down the knowledge foundation for the following text, with the main focus on the Open Policy Agent (OPA) with heavy emphasis on its Rego policy language and SMT solving.
-% Since OPA is still under active development ...
-% Since both topics are under constant development, we will include the possible limitations implied by both technologies.
+The approach taken in this thesis sits at the intersection of two distinct technical domains: policy specification via the \rego language, and automated formal reasoning via SMT solving.
+To make this intersection precise, this chapter establishes the necessary background in both.
+The first part covers the \rego policy language and its host system, the Open Policy Agent — describing its design, syntax, and declarative evaluation semantics.
+The second part covers Satisfiability Modulo Theories, focusing on the \smtlib standard, the \ziii solver, and the theories that form the backbone of the encoding developed in the following chapters.
 
 % Rego
 %% OPA
@@ -145,7 +145,7 @@ Line~\ref{fig:rego:line:default} in Figure~\ref{fig:rego} illustrates this patte
 This section will describe the SMT foundations on which this thesis is built.
 This involves an overview of SMT fundamentals, the internal architecture of \ziii, and the decidability properties of the theories it supports.
 In addition, I will describe the \ziii SMT solver which is used in the implementation of this work to evaluate the SMT-LIB formulae.
-Since this solver allows reasoning over theories, which are not explicitly in the SMTLIB2 standard and which are essential to this work, they will also be discussed.
+Since this solver allows reasoning over theories, which are not explicitly in the \smtlib standard and which are essential to this work, they will also be discussed.
 
 %%=============================================================
 \subsection{Preliminaries}
@@ -227,7 +227,7 @@ modularity. From a high-level point of view, \ziii integrates:
     \label{fig:z3-system-arch}
     \centering
     \includegraphics[width=0.75\textwidth]{figures/z3-system-arch.png}
-    \caption{System architecture of Z3.}
+    \caption{System architecture of \ziii.}
 \end{figure}
 
 A schematic overview of the structure of \ziii is shown in Figure~\ref{fig:z3-system-arch}.
@@ -236,7 +236,7 @@ Essential components of \ziii are then described as follows:
 %%-------------------------------------------------------------
 \paragraph{Input.}
 It is possible to interact with \ziii using either a textual format or a binary API.
-As mentioned in \cite{z3:web} the textual input can appear in several different forms with the most notable one being SMTLIB2 format, which uses a LISP-like syntax.
+As mentioned in \cite{z3:web} the textual input can appear in several different forms with the most notable one being \smtlib format, which uses a LISP-like syntax.
 Programmatic interaction with this tool is possible through an API from Python, C, C++, Go, Java, and other languages.
 
 %%-------------------------------------------------------------

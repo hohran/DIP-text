@@ -76,6 +76,7 @@ After normalization, a union $\ty_1 \cup \cdots \cup \ty_m$ has $m \geq 2$ and n
 For the type inference, we use a mutable type map $\typof: \Terms \to \Types$ in accordance with the type function defined in the passage \ref{ss:term}.
 We declare a function on $\typof$ giving a set of all already defined terms, noted with $\dom(\typof)$.
 For the analysis, two update operations are used:
+% TODO mention assign
 
 \paragraph{Precision-based update.}
 Precision-based update (also called \emph{type refinement}) $\refine{v}{\ty}$ overwrites the existing entry for $v$ with $\ty$ if $\typof(v) \preq \ty$ (strictly less precise):
@@ -179,7 +180,7 @@ The rule \textbf{(T-CallU)} combines both possibilities when their conditions ar
 \qquad
 \textbf{(T-CallU)}\quad
 \inferrule{
-  \typof(t_i) \subseteq \ty_i \quad
+  \typof(t_i) \not\subseteq \ty_i \quad
   \begin{array}{l}
     \forall (\ty_1, \ldots, \ty_k, \ty_r) \in \sig(f) \\
     \exists i \in 1..k

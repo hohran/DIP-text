@@ -15,7 +15,8 @@
 
 \newcommand{\TA}{\mathsf{F}} % function of type analysis
 
-\newcommand{\Holds}{\gamma}
+\newcommand{\Holds}{\mathsf{holds}}
+\newcommand{\defiff}{\overset{\mathrm{def}}{\iff}}
 
 \newcommand{\Nat}{\mathbb{N}}
 
@@ -26,14 +27,14 @@
 \newcommand{\Terms}{\mathbb{X}}
 \newcommand{\Funs}{\mathbb{F}}
 \newcommand{\Types}{\mathbb{T}}
-\newcommand{\Rules}{P}
+\newcommand{\Rules}{\mathsf{Rules}}
 \newcommand{\Inc}{\Rules_{inc}} % incremental rules TODO
 \newcommand{\Comp}{\Rules_{comp}} % complete rules TODO
 \newcommand{\STerms}{\bar{\mathbb{X}}}
 \newcommand{\Context}{\mathcal{C}}
 
 \newcommand{\Rule}{r}
-\newcommand{\Def}{\delta}
+\newcommand{\Def}{\mathsf{fallback}}
 
 \newcommand{\sig}{\mathsf{sig}}
 
@@ -60,6 +61,12 @@
 \newcommand{\unionize}[2]{\typof \mathrel{[#1 \xrightarrow{\cup} #2]}}
 \newcommand{\assign}[2]{\typof \mathrel{[#1 \mapsto #2]}}
 
+\newcommand{\RuleRef}{\mathsf{ref}}
+\newcommand{\RuleName}{\mathsf{name}}
+\newcommand{\RuleKey}{\mathsf{key}}
+\newcommand{\RuleArgs}{\mathsf{args}}
+\newcommand{\RuleDef}{\mathsf{default}}
+\newcommand{\RefBase}{\mathsf{base}}
 \newcommand{\encode}{\mathsf{encode}}
  
 \newcommand{\Unknown}{\mathsf{unknown}}
