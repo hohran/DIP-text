@@ -1,3 +1,5 @@
+%TODO: forall exists
+%TODO: ranges
 \chapter{Type Analysis}
 \label{ch:typ}
 
@@ -91,15 +93,6 @@ $\unionize{v}{\ty}$ converts the current type of $v$ into a union and appends $\
 \unionize{v}{\ty} = \typof\bigl[v \mapsto \norm(\typof(v) \cup \ty)\bigr]
 \]
 
-Three judgment forms are used throughout the inference:
-\begin{align*}
-\Sigma \vdashT v : \ty  &\quad\text{(term/value type inference)} \\
-\Sigma \vdashE e : \ty  &\quad\text{(expression type inference)} \\
-\Sigma \vdashR \rho : \ty &\quad\text{(reference type inference)}
-\end{align*}
-All judgments have side effects on $\typof$.
-The notation $\Sigma \vdashT v : \ty \leadsto \Sigma'$ makes the update explicit when needed; we omit it when the state change is clear from context.
-
 \subsection{Term Inference}
 \label{sec:term-inference}
 
@@ -180,7 +173,6 @@ The rule \textbf{(T-CallU)} combines both possibilities when their conditions ar
 \inferrule{
   (\ty_1, \ldots, \ty_k, \ty_r) \in \mathsf{sig}(f) \\
   \typof(t_i) \subseteq \ty_i \quad \forall i \in 1..k
-  % \Sigma \vdashT t_i : \ty_i' \quad \forall i \in 1..k
 }{
   \refine{f(t_1,\ldots,t_k)}{\ty_r}
 }
@@ -192,7 +184,6 @@ The rule \textbf{(T-CallU)} combines both possibilities when their conditions ar
     \forall (\ty_1, \ldots, \ty_k, \ty_r) \in \sig(f) \\
     \exists i \in 1..k
   \end{array}
-  % \Sigma \vdashT t_i : \ty_i' \quad \forall i \in 1..k
 }{
   \refine{f(t_1,\ldots,t_k)}{\Undef}
 }
@@ -216,10 +207,12 @@ Since the analysis proposed by this paper is restricted only to a fragment of po
 \[
 \textbf{(T-PackageRef)}\quad
 \inferrule{
-  \Sigma \vdashT x : \ty \\
   x \in \Globals
 }{
-  \Sigma \vdashT \texttt{data.}\pkg.x : \ty
+  \begin{array}{@{}c@{}}
+    \refine{\texttt{data.}\pkg.x}{\typof(x)} \\
+    \refine{x}{\typof(\texttt{data.}\pkg.x)}
+  \end{array}
 }
 \]
 
@@ -227,21 +220,20 @@ Since the analysis proposed by this paper is restricted only to a fragment of po
 \textbf{(T-ArrM)}\quad
 \inferrule{
   x[s_1]\cdots[s_k] \\
-  % x\cdots[s_i] \in \dom(\typof) \\
-  \Sigma \vdashT x\cdots[s_i] : \Array{\ty}^* \\
+  \Array{\ty} \subseteq \typof(x\cdots[s_i]) \\
   i \in 0..(k-1)
 }{
-  \Sigma \vdashT x\cdots[s_{i+1}] : \ty \cup \Undef
+  \unionize{x\cdots[s_{i+1}]}{\ty \cup \Undef}
 }
 \qquad
 \textbf{(T-SetM)}\quad
 \inferrule{
   x[s_1]\cdots[s_k] \\
-  \Sigma \vdashT x\cdots[s_i] : \RegoSet{\ty_s}^* \\
-  \Sigma \vdashT s_{i+1} : \ty \\
+  \RegoSet{\ty_s} \subseteq \typof(x\cdots[s_i]) \\
+  \typof(s_{i+1}) = \ty \\
   i \in 0..(k-1)
 }{
-  \Sigma \vdashT x\cdots[s_{i+1}] : \ty \cup \Undef
+  \unionize{x\cdots[s_{i+1}]}{\ty \cup \Undef}
 }
 \]
 
@@ -255,10 +247,10 @@ The mark $*$ in both rules represents that they are valid even if marked type ap
 \textbf{(T-ObjConM)}\quad
 \inferrule{
   r = x[s_1]\cdots[s_k] \\
-  \Sigma \vdashT x\cdots[s_i] : \Obj{s_{i+1}{:} \ty, \ldots} \\
+  \Obj{s_{i+1}{:} \ty, \ldots} \subseteq \typof(x\cdots[s_i]) \\
   i \in 0..(k-1)
 }{
-  \Sigma \vdashT x\cdots[s_{i+1}] : \ty
+  \unionize{x\cdots[s_{i+1}]}{\ty}
 }
 \]
 
@@ -269,11 +261,11 @@ The mark $*$ in both rules represents that they are valid even if marked type ap
 \textbf{(T-ObjMiss)}\quad
 \inferrule{
   r = x[s_1]\cdots[s_k] \\
-  \Sigma \vdashT x\cdots[s_i] : \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \\
+  \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \subseteq \typof(x\cdots[s_i]) \\
   s_{i+1} \notin \bigcup_{i \in 1..n}\{v_i\} \\
   s_{i+1} \notin \Vars
 }{
-  \Sigma \vdashT x\cdots[s_{i+1}] : \Undef
+  \unionize{x\cdots[s_{i+1}]}{\Undef}
 }
 \]
 
@@ -283,17 +275,16 @@ The mark $*$ in both rules represents that they are valid even if marked type ap
 \textbf{(T-ObjVarM)}\quad
 \inferrule{
   r = x[s_1]\cdots[s_k] \\
-  \Sigma \vdashT x\cdots[s_i] : \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \\
+  \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \subseteq \typof(x\cdots[s_i]) \\
   s_{i+1} \in \Vars
 }{
-  \Sigma \vdashT x\cdots[s_{i+1}] : \norm(\ty_1 \cup \cdots \cup \ty_n \cup \Undef)
+  \unionize{x\cdots[s_{i+1}]}{\norm(\ty_1 \cup \cdots \cup \ty_n \cup \Undef)}
 }
 \]
 
+% TODO hard to understand
 For object types, \textbf{(T-ObjConM)} defines that for an object $o$ and a constant key $k$, accessing $o$ at $k$ yields corresponding value if $o$ contains it, whereas \textbf{(T-ObjMiss)} infers such reference $\Undef$ if $o$ does not have a field with key $k$.
 When accessing object $o$ with a variable key (inference rule \textbf{(T-ObjVarM)}), we need to take into account every possible field of $o$ and also the case where the key is not present, hence the union.
-
-For brevity, the rules where object types appear in unions were not included.
 % TODO TODO TODO: maybe change `\Sigma -> x: t` to `[x -U-> t]` so that  we can infer from union types
 
 
@@ -306,8 +297,8 @@ Hence, rules of inference regarding expressions are defined separately to cover 
 \[
 \textbf{(E-Assign)}\quad
 \inferrule{
-  t_L \texttt{:=} t_R \\
-  \Sigma \vdashT t_R : \ty_R
+  t_L \texttt{:= } t_R \\
+  \typof(t_R) = \ty_R
 }{
   \refine{t_L}{\ty_R}
 }
@@ -316,6 +307,7 @@ Hence, rules of inference regarding expressions are defined separately to cover 
 \[
 \textbf{(E-CallAssign)}\quad
 \inferrule{
+  f(t_1,\ldots,t_k,t_R) \\
   \typof(f(t_1,\ldots,t_k)) = \ty
 }{
   \refine{t_R}{\ty}
@@ -326,6 +318,6 @@ Rule \textbf{(E-EqCheck)} handles the pure structural equality test \texttt{==}:
 Rule \textbf{(E-Eq)} covers unification/assignment (\texttt{=} and \texttt{:=}) and is the primary mechanism for bidirectional type propagation between variables.
 When a variable $x$ is equated with a term $t$ of type $\ty$, the type $\ty$ is \emph{unioned into} the type of $x$ (and vice versa if both sides are variables).
 This reflects Rego's unification semantics: the equality statement does not simply assign but \emph{constrains}, and both sides carry information about each other.
-
-%% TODO: soft inference
-%% TODO: detection of local/global variables
+%
+% %% TODO: soft inference
+% %% TODO: detection of local/global variables
