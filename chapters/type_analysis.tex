@@ -1,97 +1,129 @@
 %TODO: forall exists
 %TODO: ranges
-\chapter{Type Analysis}
+\chapter{Type Analysis for Symbolic Execution}
 \label{ch:typ}
 
-% One of the main challenges of the analysis of Rego policies is its dynamic type system, which contrasts the static typing of modern SMT solvers.
-% To create correct models of the policies, we 
-%
-To effectively and correctly create a SMT model of policy specified in Rego language, it is important to infer datatypes of appearing values, as precisely as possible.
-In this chapter, I describe a set of rules followed by the type analysis, which creates a function $\TA$, mapping every value to its corresponding type.
-This chapter will be heavily reliant on the definition of Rego type system from \ref{s:typ}.
+The main focus of this thesis is the analysis of \rego policies based on symbolic documents, i.e., documents where every field is specified only by a type and not a concrete value.
+As it was already mentioned, the approach of this work is to encode given policies into SMT models and reason on them.
 
-\section{Properties of Types}
+In Chapter~\ref{ch:form}, we defined $\typof$ as a substitution mapping terms to values in a concrete evaluation context.
+This chapter extends the definition of $\typof$ to operate on symbolic documents using a set of inference rules.
+Before these rules are provided, we refine the type system for the symbolic execution.
 
-This section introduces additional properties of Rego types, that it their \emph{depth} and \emph{precision order}.
-Additionally, this section presents \emph{union normalization}, i.e., a formal process to transform the union type into a standard (normalized) form.
+% To effectively and correctly create a SMT model of policy specified in Rego language, it is important to infer datatypes of appearing values, as precisely as possible.
+% In this chapter, we describe a set of rules followed by the type analysis, which creates a function $\typof$, mapping every value to its corresponding type.
 
-\subsection{Type depth}
+\section{Type System Extension}
 
-The \emph{depth} $\depth$ of a types is defined as follows:
+During a symbolic execution, each term $t \in \Terms$ does not map to a single value, but rather a (possibly infinite) set of possible values $\{v_1,\cdots,v_n\}$, where $v_i \in \Vals$.
+Given that \rego is dynamically typed, these values do not have to be of the same type.
+This implies that we need to extend the definition of the type system to map terms to a set of all possible types.
+
+\subsection{The Set of Types}
+
+For symbolic execution, i.e., for the rest of this paper, we redefine the set of \rego types $\Types$ with the definition given by the grammar:
+\begin{align*}
+  \ty \;::=\; & \{\Str\} \mid \{\Int\} \mid \{\Bool\} \mid \{\Null\} \mid \{\Undef\} \mid \{\Unknown\} \\
+   \mid\;   & \{\Array{\ty}\} \\
+   \mid\;   & \{\RegoSet{\ty}\} \\
+   \mid\;   & \{\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \\
+   \mid\;   & \ty_1 \cup \ty_2
+\end{align*}
+where:
 \begin{itemize}
-  \item $\depth(\ty) = 0$, for $\ty$ being an atomic type,
-  \item $\depth(\ty_1 \cup \cdots \cup \ty_m) = \depth(\ty_i)$, for $1 \leq i \leq m$, where $\forall_{1 \leq j \leq m}:\depth(\ty_i) \geq \depth(\ty_j)$,
-  \item $\depth(\Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}) = 1+\depth(\ty_1 \cup \cdots \cup \ty_n)$,
-  \item $\depth(\Array{\ty}) = 1+\depth(\ty)$,
-  \item $\depth(\RegoSet{\ty}) = 1+\depth(\ty)$.
+  \item $\ty_1 \cup \ty_2$ is the standard set union,
+  \item $\Array{\ty}$ denotes the array type with elements of type $\ty$,
+  \item $\RegoSet{\ty}$ is a \rego set type of elements of type $\ty$,
+  \item $\Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n}$ is an object type with fields $v_i \in \Vals$ typed $\ty_i$,
+  \item $\{\Unknown\}$ is a special \emph{placeholder} type used when no information is available.
 \end{itemize}
 
-Informally said, atomic types have depth $0$, and composite types have their depth greater by one than their element with the maximum depth.
-In addition, we allow for the type depth function $\depth$ to be applied directly to terms with the intuitive semantics: $\depth(t) = \depth(\typof(t))$, where $t \in \Terms$.
-Since $\Unknown$ is not constrained, we set $\depth(\Unknown) = \infty$.
+For the rest of this chapter, we simplify the notation of given types and omit the wrapping curly braces for singleton sets.
+With this notation, e.g., $\Str$ is equal to $\{\Str\}$.
+
+
+% \section{Properties of Types}
+%
+% This section introduces additional properties of Rego types, that it their \emph{depth} and \emph{precision order}.
+% Additionally, this section presents \emph{union normalization}, i.e., a formal process to transform the union type into a standard (normalized) form.
+%
+% TODO: move to transformation TODO TODO
+% \subsection{Type depth}
+%
+% The \emph{depth} $\depth$ of a types is defined as follows:
+% \begin{itemize}
+%   \item $\depth(\ty) = 0$, for $\ty$ being an atomic type,
+%   \item $\depth(\ty_1 \cup \cdots \cup \ty_m) = \depth(\ty_i)$, for $1 \leq i \leq m$, where $\forall_{1 \leq j \leq m}:\depth(\ty_i) \geq \depth(\ty_j)$,
+%   \item $\depth(\Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}) = 1+\depth(\ty_1 \cup \cdots \cup \ty_n)$,
+%   \item $\depth(\Array{\ty}) = 1+\depth(\ty)$,
+%   \item $\depth(\RegoSet{\ty}) = 1+\depth(\ty)$.
+% \end{itemize}
+%
+% Informally said, atomic types have depth $0$, and composite types have their depth greater by one than their element with the maximum depth.
+% In addition, we allow for the type depth function $\depth$ to be applied directly to terms with the intuitive semantics: $\depth(t) = \depth(\typof(t))$, where $t \in \Terms$.
+% Since $\Unknown$ is not constrained, we set $\depth(\Unknown) = \infty$.
 
 \subsection{Precision Order}
 
 The precision order $\preq$ on $\Types$ is defined as the smallest preorder satisfying:
 \begin{enumerate}
-  \item $\forall_{\ty \in \Types}{:}\Unknown \leqT \ty$,
+  \item $\forall\ty \in \Types{:}\{\Unknown\} \leqT \ty$,
   \item $\ty \leqT \ty$ (reflexivity),
-  \item $\Array{\ty} \leqT \Array{\ty'}$ iff $\ty \leqT \ty'$.
-  \item $\RegoSet{\ty} \leqT \RegoSet{\ty'}$ iff $\ty \leqT \ty'$.
+  \item $\{\Array{\ty}\} \leqT \{\Array{\ty'}\}$ iff $\ty \leqT \ty'$.
+  \item $\{\RegoSet{\ty}\} \leqT \{\RegoSet{\ty'}\}$ iff $\ty \leqT \ty'$.
   \item $(\ty_1 \cup \cdots \cup \ty_m) \leqT (\ty_1' \cup \cdots \cup \ty_n')$ iff $\forall_{1 \leq i \leq n}{:} \exists_{1 \leq j \leq m}{:} \ty_j \preq \ty_i'$, \label{i:uni}
-  \item $\Obj{v_i{:}\ty_i} \leqT \Obj{v_i{:}\ty_i'}$
-        iff for all $i$: $\ty_i \preq \ty_i'$. \label{i:obj}
+  \item $\{\Obj{v_i{:}\ty_i}\} \leqT \{\Obj{v_i{:}\ty_i'}\}$
+     iff for all $i$: $\ty_i \preq \ty_i'$. \label{i:obj}
 \end{enumerate}
 Constraint \ref{i:uni} says that union $u_1$ is less (or equally) precise than $u_2$ iff every member of $u_2$ is more (or equally) precise than some member of $u_1$.
-Constraint \ref{i:obj} describes that for objects $o_1,o_2$ is the relation $o1 \preq o2$ true iff both objects have the exact same keys, and for each such key $k$, $o_1[k] \preq o_2[k]$.
+Constraint \ref{i:obj} describes that for objects $o_1,o_2$ is the relation $o_1 \preq o_2$ true iff both objects have the exact same keys, and for each of their keys $k$, $o_1[k] \preq o_2[k]$.
 We additionally write $\ty \ltT \ty'$ for $\ty \leqT \ty'$ and $\ty' \not\leqT \ty$ (strict precision).
 
 The precision order formalises the intuition that \emph{more information is better}: $\ty \leqT \ty'$ reads ``$\ty$ is at most as informative as $\ty'$''.
 It is important to note that we have more information about a value which set of possible types is smaller.
-Unknown is the least informative type.
-An object with more fields is strictly more informative than one with fewer fields.
+The placeholder type $\Unknown$ is the least informative.
 A union with fewer alternatives is more informative than one with more.
 
-\subsection{Union Normalization}
-
-Union types are subject to a \emph{normalization} operation that keeps them in a standard form.
-
-Given a type $\ty$, we define the result of its normalization $\norm(\ty)$ as follows:
-\begin{enumerate}
-  \item If $\ty$ is not a union, return $\ty$ unchanged.
-  \item \emph{Flatten}: replace every union member that is itself a union by the transitive closure of its members.
-  \item \emph{Deduplicate}: remove equal members (by structural equality), keeping first occurrences.
-  \item \emph{Drop unknowns}: if the resulting set has more than one member, remove all $\Unknown$ members.
-  \item \emph{Simplify}: if exactly one member remains, return that member (not a union).
-\end{enumerate}
-
-The effect of $\norm$ is that the empty union is the unique representation for ``no information'', and single-member unions are collapsed.
-After normalization, a union $\ty_1 \cup \cdots \cup \ty_m$ has $m \geq 2$ and no $\Unknown$ member (unless it is the sole member of the whole type, which would have been simplified away).
+% \subsection{Union Normalization}
+%
+% Union types are subject to a \emph{normalization} operation that keeps them in a standard form.
+%
+% Given a type $\ty$, we define the result of its normalization $\norm(\ty)$ as follows:
+% \begin{enumerate}
+%   \item If $\ty$ is not a union, return $\ty$ unchanged.
+%   \item \emph{Flatten}: replace every union member that is itself a union by the transitive closure of its members.
+%   \item \emph{Deduplicate}: remove equal members (by structural equality), keeping first occurrences.
+%   \item \emph{Drop unknowns}: if the resulting set has more than one member, remove all $\Unknown$ members.
+%   \item \emph{Simplify}: if exactly one member remains, return that member (not a union).
+% \end{enumerate}
+%
+% The effect of $\norm$ is that the empty union is the unique representation for ``no information'', and single-member unions are collapsed.
+% After normalization, a union $\ty_1 \cup \cdots \cup \ty_m$ has $m \geq 2$ and no $\Unknown$ member (unless it is the sole member of the whole type, which would have been simplified away).
 
 %%=============================================================
 \section{Type Inference Rules}
 \label{sec:inference}
 %%=============================================================
 
-For the type inference, we use a mutable type map $\typof: \Terms \to \Types$ in accordance with the type function defined in the passage \ref{ss:term}.
+For the type inference, we use a mutable type map $\typof: \Terms \to \Types$ in accordance with the type function defined in the Section \ref{ss:types}.
 We declare a function on $\typof$ giving a set of all already defined terms, noted with $\dom(\typof)$.
-For the analysis, two update operations are used:
-% TODO mention assign
+An update of the type map at key $v$ with type $\ty$ is noted $\assign{v}{\ty}$; based on it, the two update operations used for the type analysis:
 
 \paragraph{Precision-based update.}
-Precision-based update (also called \emph{type refinement}) $\refine{v}{\ty}$ overwrites the existing entry for $v$ with $\ty$ if $\typof(v) \preq \ty$ (strictly less precise):
+Precision-based update (also called \emph{type refinement}) $\refine{v}{\ty}$ overwrites the existing entry for $v$ with $\ty$ with respect to their precision ordering:
 \[
 \refine{v}{\ty} =
 \begin{cases}
-\typof[v \mapsto \ty] & \text{if } \ty \preq \typof(v) \\
-\Undef & \text{otherwise}
+  \typof[v \mapsto \ty] & \text{if } \typof(v) \preq \ty \\
+  % \typof[v \mapsto \ty' \cup \ty] & \text{if } \typof(v) = \ty' \cup \ty'' \land \forall t \in \ty'': \{t\} \preq \ty \land \forall t \in \ty': \{t\} \not\preq \ty\\
+  \{\Undef\} & \text{otherwise}
 \end{cases}
 \]
 
 \paragraph{Union extension.}
-$\unionize{v}{\ty}$ converts the current type of $v$ into a union and appends $\ty$, then canonicalizes:
+$\unionize{v}{\ty}$ unionizes the type of $v$ with $\ty$, whilst removing the $\Unknown$ type:
 \[
-\unionize{v}{\ty} = \typof\bigl[v \mapsto \norm(\typof(v) \cup \ty)\bigr]
+  \unionize{v}{\ty} = \typof\bigl[v \mapsto (\typof(v) \setminus \{\Unknown\}) \cup \ty)\bigr]
 \]
 
 \subsection{Term Inference}
@@ -103,21 +135,21 @@ if $v \in \dom(\typof)$ and $\typof(v) \neq \Unknown$, the cached type is return
 
 
 \paragraph{Inference of Constants.}
-For constants of atomic types, the inference is straightforward:
+Given the sets $\mathcal{Z}$, containing all whole numbers, and $\Sigma^*$, containing all string literals, the inference for constants of atomic types is straightforward:
 \[
 \textbf{(T-Null)}\quad
 \inferrule{ }{\refine{\Null}{\Null}}
 \qquad
 \textbf{(T-String)}\quad
-\inferrule{ }{\refine{s}{\Str}}
+\inferrule{ s \in \Sigma^* }{\refine{s}{\Str}}
 \]
 
 \[
 \textbf{(T-Number)}\quad
-\inferrule{ }{\refine{n}{\Int}}
+\inferrule{ n \in \mathcal{Z} }{\refine{n}{\Int}}
 \qquad
 \textbf{(T-Bool)}\quad
-\inferrule{ }{\refine{b}{\Bool}}
+\inferrule{ b \in \{\top,\bot\} }{\refine{b}{\Bool}}
 \]
 
 For the type inference of collections, we have to deliberately take their empty versions into account.
@@ -127,7 +159,7 @@ For the type inference of collections, we have to deliberately take their empty 
 \inferrule{ }{\refine{[]}{\Array{\Undef}}}
 \qquad
 \textbf{(T-SetEmpty)}\quad
-\inferrule{ }{\refine{\texttt{set()}}{\Undef}}
+\inferrule{ }{\refine{\texttt{set()}}{\RegoSet{\Undef}}}
 \]
 
 \[
@@ -135,7 +167,7 @@ For the type inference of collections, we have to deliberately take their empty 
 \inferrule{
   \typof(v_i) = \ty_i \quad \forall i \in 0..n
 }{
-  \refine{[v_0, \ldots, v_n]}{\Array{\norm(\ty_0 \cup \cdots \cup \ty_n)}}
+  \refine{[v_0, \ldots, v_n]}{\Array{\ty_0 \cup \cdots \cup \ty_n}}
 }
 \]
 
@@ -145,7 +177,7 @@ For the type inference of collections, we have to deliberately take their empty 
 \inferrule{
   \typof(v_i) = \ty_i \quad \forall i \in 0..n
 }{
-  \refine{\{v_0, \ldots, v_n\}}{\RegoSet{\norm(\ty_0 \cup \cdots \cup \ty_n)}}
+  \refine{\{v_0, \ldots, v_n\}}{\RegoSet{\ty_0 \cup \cdots \cup \ty_n}}
 }
 \]
 
@@ -279,26 +311,24 @@ The mark $*$ in both rules represents that they are valid even if marked type ap
   \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \subseteq \typof(x\cdots[s_i]) \\
   s_{i+1} \in \Vars
 }{
-  \unionize{x\cdots[s_{i+1}]}{\norm(\ty_1 \cup \cdots \cup \ty_n \cup \Undef)}
+  \unionize{x\cdots[s_{i+1}]}{\ty_1 \cup \cdots \cup \ty_n \cup \Undef}
 }
 \]
 
 % TODO hard to understand
-For object types, \textbf{(T-ObjConM)} defines that for an object $o$ and a constant key $k$, accessing $o$ at $k$ yields corresponding value if $o$ contains it, whereas \textbf{(T-ObjMiss)} infers such reference $\Undef$ if $o$ does not have a field with key $k$.
+For object types, \textbf{(T-ObjConM)} defines that for an object $o$ and a constant key $k$, accessing $o[k]$ yields corresponding value if $o$ contains given key, whereas \textbf{(T-ObjMiss)} infers such reference $\Undef$ if $o$ does not have a field with key $k$.
 When accessing object $o$ with a variable key (inference rule \textbf{(T-ObjVarM)}), we need to take into account every possible field of $o$ and also the case where the key is not present, hence the union.
-% TODO TODO TODO: maybe change `\Sigma -> x: t` to `[x -U-> t]` so that  we can infer from union types
-
 
 \subsection{Expression Inference}
 \label{sec:expr-inference}
 
 As discussed in \ref{s:terms}, expressions can be either single terms, or function calls, which can themselves be interpreted as terms.
-Hence, rules of inference regarding expressions are defined separately to cover the assign and comparison functions, which are the cornerstone of type propagation.
+Hence, rules of inference regarding expressions are defined separately to cover the assignment of local variables, which are the cornerstone of type propagation.
 
 \[
 \textbf{(E-Assign)}\quad
 \inferrule{
-  t_L \texttt{:= } t_R \\
+  t_L \mathrel{:= } t_R \\
   \typof(t_R) = \ty_R
 }{
   \refine{t_L}{\ty_R}
@@ -308,17 +338,19 @@ Hence, rules of inference regarding expressions are defined separately to cover 
 \[
 \textbf{(E-CallAssign)}\quad
 \inferrule{
-  f(t_1,\ldots,t_k,t_R) \\
+  f(t_1,\ldots,t_k,t_r) \\
   \typof(f(t_1,\ldots,t_k)) = \ty
 }{
-  \refine{t_R}{\ty}
+  \refine{t_r}{\ty}
 }
 \]
 
-Rule \textbf{(E-EqCheck)} handles the pure structural equality test \texttt{==}: both operands are visited for type information, but no type is propagated between them.
-Rule \textbf{(E-Eq)} covers unification/assignment (\texttt{=} and \texttt{:=}) and is the primary mechanism for bidirectional type propagation between variables.
-When a variable $x$ is equated with a term $t$ of type $\ty$, the type $\ty$ is \emph{unioned into} the type of $x$ (and vice versa if both sides are variables).
-This reflects Rego's unification semantics: the equality statement does not simply assign but \emph{constrains}, and both sides carry information about each other.
+% Rule \textbf{(E-EqCheck)} handles the pure structural equality test \texttt{==}: both operands are visited for type information, but no type is propagated between them.
+% Rule \textbf{(E-Eq)} covers unification/assignment (\texttt{=} and \texttt{:=}) and is the primary mechanism for bidirectional type propagation between variables.
+% When a variable $x$ is equated with a term $t$ of type $\ty$, the type $\ty$ is \emph{unioned into} the type of $x$ (and vice versa if both sides are variables).
+% This reflects Rego's unification semantics: the equality statement does not simply assign but \emph{constrains}, and both sides carry information about each other.
 %
 % %% TODO: soft inference
 % %% TODO: detection of local/global variables
+%% TODO: ranges !!
+%% TODO: rules

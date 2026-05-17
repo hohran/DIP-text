@@ -106,7 +106,6 @@ A \emph{reference} is a term of the form $t[k]$, denoting access into the compos
 This definition allows references to be chained into terms of form $t[k_1][k_2]\cdots[k_n]$; for such a reference $r$, we define its \emph{base} $\RefBase(r) = t$ and its \emph{length} $|r| = n+1$ (counting in the base $t$).
 As syntactic sugar, $t\texttt{.}k$ abbreviates $t[\texttt{"k"}]$ when $k$ is a string literal identifier, so \texttt{x.a.b.c} is identical to \texttt{x["a"]["b"]["c"]}.
 
-% TODO: define dom
 The value of a reference is defined recursively:
 \[
 \sigma(t[k]) \;=\;
