@@ -41,28 +41,6 @@ where:
 For the rest of this chapter, we simplify the notation of given types and omit the wrapping curly braces for singleton sets.
 With this notation, e.g., $\Str$ is equal to $\{\Str\}$.
 
-
-% \section{Properties of Types}
-%
-% This section introduces additional properties of Rego types, that it their \emph{depth} and \emph{precision order}.
-% Additionally, this section presents \emph{union normalization}, i.e., a formal process to transform the union type into a standard (normalized) form.
-%
-% TODO: move to transformation TODO TODO
-% \subsection{Type depth}
-%
-% The \emph{depth} $\depth$ of a types is defined as follows:
-% \begin{itemize}
-%   \item $\depth(\ty) = 0$, for $\ty$ being an atomic type,
-%   \item $\depth(\ty_1 \cup \cdots \cup \ty_m) = \depth(\ty_i)$, for $1 \leq i \leq m$, where $\forall_{1 \leq j \leq m}:\depth(\ty_i) \geq \depth(\ty_j)$,
-%   \item $\depth(\Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}) = 1+\depth(\ty_1 \cup \cdots \cup \ty_n)$,
-%   \item $\depth(\Array{\ty}) = 1+\depth(\ty)$,
-%   \item $\depth(\RegoSet{\ty}) = 1+\depth(\ty)$.
-% \end{itemize}
-%
-% Informally said, atomic types have depth $0$, and composite types have their depth greater by one than their element with the maximum depth.
-% In addition, we allow for the type depth function $\depth$ to be applied directly to terms with the intuitive semantics: $\depth(t) = \depth(\typof(t))$, where $t \in \Terms$.
-% Since $\Unknown$ is not constrained, we set $\depth(\Unknown) = \infty$.
-
 \subsection{Precision Order}
 
 The precision order $\preq$ on $\Types$ is defined as the smallest preorder satisfying:
@@ -71,7 +49,7 @@ The precision order $\preq$ on $\Types$ is defined as the smallest preorder sati
   \item $\ty \leqT \ty$ (reflexivity),
   \item $\{\Array{\ty}\} \leqT \{\Array{\ty'}\}$ iff $\ty \leqT \ty'$.
   \item $\{\RegoSet{\ty}\} \leqT \{\RegoSet{\ty'}\}$ iff $\ty \leqT \ty'$.
-  \item $(\ty_1 \cup \cdots \cup \ty_m) \leqT (\ty_1' \cup \cdots \cup \ty_n')$ iff $\forall_{1 \leq i \leq n}{:} \exists_{1 \leq j \leq m}{:} \ty_j \preq \ty_i'$, \label{i:uni}
+  \item $(\ty_1 \cup \cdots \cup \ty_m) \leqT (\ty_1' \cup \cdots \cup \ty_n')$ iff $\forall \ranges{i}{1}{n}{:} \exists \ranges{j}{1}{m}{:} \ty_j \preq \ty_i'$, \label{i:uni}
   \item $\{\Obj{v_i{:}\ty_i}\} \leqT \{\Obj{v_i{:}\ty_i'}\}$
      iff for all $i$: $\ty_i \preq \ty_i'$. \label{i:obj}
 \end{enumerate}
@@ -156,7 +134,7 @@ For the type inference of collections, we have to deliberately take their empty 
 
 \[
 \textbf{(T-ArrayEmpty)}\quad
-\inferrule{ }{\refine{[]}{\Array{\Undef}}}
+\inferrule{ }{\refine{[\,]}{\Array{\Undef}}}
 \qquad
 \textbf{(T-SetEmpty)}\quad
 \inferrule{ }{\refine{\texttt{set()}}{\RegoSet{\Undef}}}
@@ -165,9 +143,10 @@ For the type inference of collections, we have to deliberately take their empty 
 \[
 \textbf{(T-Array)}\quad
 \inferrule{
-  \typof(v_i) = \ty_i \quad \forall i \in 0..n
+  [t_0, \ldots, t_n] \\
+  \typof(t_i) = \ty_i \quad \forall \ranges{i}{0}{n}
 }{
-  \refine{[v_0, \ldots, v_n]}{\Array{\ty_0 \cup \cdots \cup \ty_n}}
+  \refine{[t_0, \ldots, t_n]}{\Array{\ty_0 \cup \cdots \cup \ty_n}}
 }
 \]
 
@@ -175,18 +154,20 @@ For the type inference of collections, we have to deliberately take their empty 
 \qquad
 \textbf{(T-Set)}\quad
 \inferrule{
-  \typof(v_i) = \ty_i \quad \forall i \in 0..n
+  \{t_0, \ldots, t_n\} \\
+  \typof(t_i) = \ty_i \quad \forall \ranges{i}{0}{n}
 }{
-  \refine{\{v_0, \ldots, v_n\}}{\RegoSet{\ty_0 \cup \cdots \cup \ty_n}}
+  \refine{\{t_0, \ldots, t_n\}}{\RegoSet{\ty_0 \cup \cdots \cup \ty_n}}
 }
 \]
 
 \[
 \textbf{(T-Object)}\quad
 \inferrule{
-  \typof(v_i) = \ty_i \quad \forall i \in 0..n
-}{
-  \refine{\{k_0{:}v_0, \ldots, k_n{:}v_n\}}{\Obj{k_0{:}\ty_0, \ldots, k_n{:}\ty_n}}
+  \{k_0{:}t_0, \ldots, k_n{:}t_n\} \\
+  \typof(t_i) = \ty_i \quad \forall \ranges{i}{0}{n}}
+{
+  \refine{\{k_0{:}t_0, \ldots, k_n{:}t_n\}}{\Obj{k_0{:}\ty_0, \ldots, k_n{:}\ty_n}}
 }
 \]
 
@@ -205,18 +186,18 @@ The rule \textbf{(T-CallU)} combines both possibilities when their conditions ar
 \textbf{(T-Call)}\quad
 \inferrule{
   (\ty_1, \ldots, \ty_k, \ty_r) \in \mathsf{sig}(f) \\
-  \typof(t_i) \subseteq \ty_i \quad \forall i \in 1..k
+  \typof(t_i) \subseteq \ty_i \quad \forall \ranges{i}{1}{k}
 }{
   \refine{f(t_1,\ldots,t_k)}{\ty_r}
 }
 \qquad
 \textbf{(T-CallU)}\quad
 \inferrule{
-  \typof(t_i) \not\subseteq \ty_i \quad
-  \begin{array}{l}
-    \forall (\ty_1, \ldots, \ty_k, \ty_r) \in \sig(f) \\
-    \exists i \in 1..k
-  \end{array}
+  \begin{array}{r}
+    \forall (\ty_1, \ldots, \ty_k, \ty_r) \in \sig(f): \\
+    \exists \ranges{i}{1}{k}:
+  \end{array}\quad
+  \typof(t_i) \not\subseteq \ty_i
 }{
   \refine{f(t_1,\ldots,t_k)}{\Undef}
 }
@@ -254,7 +235,7 @@ Since the analysis proposed by this paper is restricted only to a fragment of po
 \inferrule{
   x[s_1]\cdots[s_k] \\
   \Array{\ty} \subseteq \typof(x\cdots[s_i]) \\
-  i \in 0..(k-1)
+  \ranges{i}{0}{k-1}
 }{
   \unionize{x\cdots[s_{i+1}]}{\ty \cup \Undef}
 }
@@ -264,7 +245,7 @@ Since the analysis proposed by this paper is restricted only to a fragment of po
   x[s_1]\cdots[s_k] \\
   \RegoSet{\ty_s} \subseteq \typof(x\cdots[s_i]) \\
   \typof(s_{i+1}) = \ty \\
-  i \in 0..(k-1)
+  \ranges{i}{0}{k-1}
 }{
   \unionize{x\cdots[s_{i+1}]}{\ty \cup \Undef}
 }
@@ -281,7 +262,7 @@ The mark $*$ in both rules represents that they are valid even if marked type ap
 \inferrule{
   r = x[s_1]\cdots[s_k] \\
   \Obj{s_{i+1}{:} \ty, \ldots} \subseteq \typof(x\cdots[s_i]) \\
-  i \in 0..(k-1)
+  \ranges{i}{0}{k-1}
 }{
   \unionize{x\cdots[s_{i+1}]}{\ty}
 }
@@ -294,8 +275,8 @@ The mark $*$ in both rules represents that they are valid even if marked type ap
 \textbf{(T-ObjMiss)}\quad
 \inferrule{
   r = x[s_1]\cdots[s_k] \\
-  \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \subseteq \typof(x\cdots[s_i]) \\
-  s_{i+1} \notin \bigcup_{i \in 1..n}\{v_i\} \\
+  \Obj{k_1{:}\ty_1,\ldots,k_n{:}\ty_n} \subseteq \typof(x\cdots[s_i]) \\
+  s_{i+1} \notin \bigcup_{\ranges{i}{1}{n}}\{k_i\} \\
   s_{i+1} \notin \Vars
 }{
   \unionize{x\cdots[s_{i+1}]}{\Undef}
@@ -308,7 +289,7 @@ The mark $*$ in both rules represents that they are valid even if marked type ap
 \textbf{(T-ObjVarM)}\quad
 \inferrule{
   r = x[s_1]\cdots[s_k] \\
-  \Obj{v_1{:}\ty_1,\ldots,v_n{:}\ty_n} \subseteq \typof(x\cdots[s_i]) \\
+  \Obj{k_1{:}\ty_1,\ldots,k_n{:}\ty_n} \subseteq \typof(x\cdots[s_i]) \\
   s_{i+1} \in \Vars
 }{
   \unionize{x\cdots[s_{i+1}]}{\ty_1 \cup \cdots \cup \ty_n \cup \Undef}

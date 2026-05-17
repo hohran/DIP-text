@@ -14,6 +14,27 @@ The structure of this chapter will correspond to the chapter \ref{ch:form}, whic
 \section{Terms}
 %%=============================================================
 
+% \section{Properties of Types}
+%
+% This section introduces additional properties of Rego types, that it their \emph{depth} and \emph{precision order}.
+% Additionally, this section presents \emph{union normalization}, i.e., a formal process to transform the union type into a standard (normalized) form.
+%
+% TODO: move to transformation TODO TODO
+% \subsection{Type depth}
+%
+% The \emph{depth} $\depth$ of a types is defined as follows:
+% \begin{itemize}
+%   \item $\depth(\ty) = 0$, for $\ty$ being an atomic type,
+%   \item $\depth(\ty_1 \cup \cdots \cup \ty_m) = \depth(\ty_i)$, for $1 \leq i \leq m$, where $\forall_{1 \leq j \leq m}:\depth(\ty_i) \geq \depth(\ty_j)$,
+%   \item $\depth(\Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}) = 1+\depth(\ty_1 \cup \cdots \cup \ty_n)$,
+%   \item $\depth(\Array{\ty}) = 1+\depth(\ty)$,
+%   \item $\depth(\RegoSet{\ty}) = 1+\depth(\ty)$.
+% \end{itemize}
+%
+% Informally said, atomic types have depth $0$, and composite types have their depth greater by one than their element with the maximum depth.
+% In addition, we allow for the type depth function $\depth$ to be applied directly to terms with the intuitive semantics: $\depth(t) = \depth(\typof(t))$, where $t \in \Terms$.
+% Since $\Unknown$ is not constrained, we set $\depth(\Unknown) = \infty$.
+
 This section describes the transformation of Rego terms into SMT.
 By the specification given in \ref{ch:form}, terms can be either values, variables, references, or function calls.
 
