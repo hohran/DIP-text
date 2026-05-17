@@ -20,6 +20,7 @@ Given that \rego is dynamically typed, these values do not have to be of the sam
 This implies that we need to extend the definition of the type system to map terms to a set of all possible types.
 
 \subsection{The Set of Types}
+\label{ss:types:new}
 
 For symbolic execution, i.e., for the rest of this paper, we redefine the set of \rego types $\Types$ with the definition given by the grammar:
 \begin{align*}
@@ -40,6 +41,9 @@ where:
 
 For the rest of this chapter, we simplify the notation of given types and omit the wrapping curly braces for singleton sets.
 With this notation, e.g., $\Str$ is equal to $\{\Str\}$.
+
+This type system allows us to treat any argument $A$ from a type signature $\sig$ (defined in Section~\ref{ss:functions}) as a direct subsets of $\Types$.
+Additionally, for each function $f$ we denote its return type with $\ret(f)$.
 
 \subsection{Precision Order}
 
@@ -171,7 +175,6 @@ For the type inference of collections, we have to deliberately take their empty 
 }
 \]
 
-% TODO: sig
 % if all types match the signature, the type of the whole term is expected
 % otherwise we need to unify with undef
 \paragraph{Function Call Inference.}
@@ -185,19 +188,18 @@ The rule \textbf{(T-CallU)} combines both possibilities when their conditions ar
 \[
 \textbf{(T-Call)}\quad
 \inferrule{
-  (\ty_1, \ldots, \ty_k, \ty_r) \in \mathsf{sig}(f) \\
+  f(t_1, \ldots, t_k) \\
+  \mathsf{sig}(f) = (\ty_1, \ldots, \ty_k) \\
   \typof(t_i) \subseteq \ty_i \quad \forall \ranges{i}{1}{k}
 }{
-  \refine{f(t_1,\ldots,t_k)}{\ty_r}
+  \refine{f(t_1,\ldots,t_k)}{\ret(f)}
 }
 \qquad
 \textbf{(T-CallU)}\quad
 \inferrule{
-  \begin{array}{r}
-    \forall (\ty_1, \ldots, \ty_k, \ty_r) \in \sig(f): \\
-    \exists \ranges{i}{1}{k}:
-  \end{array}\quad
-  \typof(t_i) \not\subseteq \ty_i
+  f(t_1, \ldots, t_k) \\
+  \sig(f) = (\ty_1, \ldots, \ty_k) \\
+  \typof(t_i) \cap \ty_i = \emptyset
 }{
   \refine{f(t_1,\ldots,t_k)}{\Undef}
 }
@@ -208,7 +210,7 @@ The rule \textbf{(T-CallU)} combines both possibilities when their conditions ar
 \inferrule{
   \text{(otherwise)}
 }{
-  \refine{f(t_1,\ldots,t_k)}{\ty_r \cup \Undef}
+  \refine{f(t_1,\ldots,t_k)}{\ret(f) \cup \Undef}
 }
 \]
 
@@ -326,12 +328,96 @@ Hence, rules of inference regarding expressions are defined separately to cover 
 }
 \]
 
-% Rule \textbf{(E-EqCheck)} handles the pure structural equality test \texttt{==}: both operands are visited for type information, but no type is propagated between them.
-% Rule \textbf{(E-Eq)} covers unification/assignment (\texttt{=} and \texttt{:=}) and is the primary mechanism for bidirectional type propagation between variables.
-% When a variable $x$ is equated with a term $t$ of type $\ty$, the type $\ty$ is \emph{unioned into} the type of $x$ (and vice versa if both sides are variables).
-% This reflects Rego's unification semantics: the equality statement does not simply assign but \emph{constrains}, and both sides carry information about each other.
 %
 % %% TODO: soft inference
 % %% TODO: detection of local/global variables
-%% TODO: ranges !!
-%% TODO: rules
+
+\subsection{Rule Inference}
+\label{sec:rule-inference}
+
+A \rego \emph{package} consists of rule definitions that associate global names with typed values.
+We recall Section~\ref{ss:head-body}, which defines rules $r \in \Rules$ as pairs $(h, \mathbf{B})$, where $h$ represents the rule's head and $\mathbf{B} = (B_1, \ldots, B_n)$ is a list of rule's bodies — each containing a value and a condition (a list of expressions).
+
+The goal of rule inference is to extend $\typof$ so that the reference $\RuleRef(h)$ is assigned a type that soundly approximates all values the rule may produce at runtime.
+For each body $B_i \in \mathbf{B}$, the condition $\BodyCond(B_i)$ is first analysed using the expression inference rules of Section~\ref{sec:expr-inference} to refine the types of local variables; the body value $\BodyVal(B_i)$ is then typed under the resulting map.
+Since any body may hold independently, the reference type is extended by unification over all per-body value types.
+
+The interpretation of this union depends on the kind of rule, as defined in Section~\ref{ss:head-body}.
+
+\paragraph{Assignment rules.}
+By this term, we are referring to 1) complete, 2) object-accumulating, and 3) default rules, since for these rule kinds, each body contributes a value directly to $\RuleRef(h)$.
+Because of this property, the proposed type inference treats these rules indifferently.
+The rule is applied once per body $B_i \in \mathbf{B}$ (i.e., for every else branch in the rule):
+
+\[
+\textbf{(Rule-Assign)}\quad
+\inferrule{
+  B_i \in \mathbf{B} \\
+  \typof(e) \text{ is inferred} \quad \forall e \in \BodyCond(B_i) \\
+  \typof(\BodyVal(B_i)) = \ty
+}{
+  \unionize{\RuleRef(h)}{\ty}
+}
+\]
+
+\paragraph{Set-accumulating rules.}
+Here, each body contributes one element ($\RuleKey(h)$) to the set denoted by $\RuleRef(h)$.
+The type of $\BodyVal(B_i)$ serves as the element type; the reference is then unionised with $\RegoSet{\tau}$, so that $\typof(\RuleRef(h))$ accumulates the set type across all bodies, including else-branch bodies:
+
+\[
+\textbf{(Rule-AccSet)}\quad
+\inferrule{
+  B_i \in \mathbf{B} \\
+  \typof(e) \text{ is inferred} \quad \forall e \in \BodyCond(B_i) \\
+  \typof(\BodyVal(B_i)) = \tau
+}{
+  \unionize{\RuleRef(h)}{\RegoSet{\tau}}
+}
+\]
+
+\section{Analysis Algorithm}
+\label{sec:analysis-algorithm}
+
+Let $\Pkg$ be a \rego package given by the rule set $\Rules = \{r_1, \ldots, r_m\}$
+and let $\Schema : \Terms \rightharpoonup \Types$ be a schema describing the \texttt{input} and \texttt{data} documents.
+We define the type-maps $\typof,\typof'$ to be \emph{equal} iff $\forall k \in \dom(\typof) \land \dom(\typof'){:}\; \typof(k) = \typof'(k)$.
+Under this definition, we set the algorithm as follows:
+\begin{enumerate}
+  \item initialize the type map $\typof$:
+\[
+  \typof(t) =
+  \begin{cases}
+    \Schema(t) & \text{if } t \in \dom(\Schema), \\
+    \Unknown   & \text{otherwise.}
+  \end{cases}
+\]
+  \item Apply \textbf{(Rule-Assign)} and \textbf{(Rule-AccSet)} for every $r \in \Rules$, resulting with the type map $\typof'$. \label{alg:types:loop}
+  \item If $\typof' = \typof$, \textbf{stop} (\emph{fixpoint} reached). \label{alg:types:check}
+  \item Otherwise set $\typof \rightarrow \typof'$ and continue with step~\ref{alg:types:loop}.
+\end{enumerate}
+This core of this algorithm are steps~\ref{alg:types:loop} and \ref{alg:types:check}, described in the following paragraphs:
+
+\paragraph{Step function.}
+A single analysis step computes a new type map $\typof'$ by applying the inference rules \textbf{(Rule-Assign)} and \textbf{(Rule-AccSet)} to every $(h, \mathbf{B}) \in \Rules$.
+This invokes the expression inference given in Section~\ref{sec:expr-inference} for every expression $e$ of bodies $B_i \in \mathbf{B}$, and consequently the term inference (from Section~\ref{sec:term-inference}) for every term contained in $e$.
+
+%% TODO TODO
+\paragraph{Fixpoint.}
+The analysis computes the sequence $(\typof_k)_{k \geq 0}$ defined by
+$\typof_{k+1} = \mathcal{F}(\typof_k)$.
+Iteration continues until two successive maps agree.
+The resulting type map:
+\[
+  \typof^* = \typof_k \quad \text{such that} \quad \mathcal{F}(\typof_k) = \typof_k
+\]
+is a \emph{fixpoint} of $\mathcal{F}$: no further application of any inference rule
+changes any entry, i.e., for every $r \in \Rules_{\mathsf{pkg}}$ and $B_i \in \mathbf{B}$,
+the conclusion's unionize \todo{hmm} update is a no-op under $\typof^*$.
+
+\paragraph{Termination.}
+Every update to $\typof$ either replaces an existing entry with a strictly more precise
+type via $\refine{}{}$, or extends a union with a new member via $\unionize{}{}$; neither
+operation can be applied infinitely often.
+Since the set of terms in $\Rules_{\mathsf{pkg}}$ and $\dom(\Schema)$ is finite, and the
+type lattice $(\Types, \preq)$ has bounded height, the sequence $(\typof_k)_{k \geq 0}$
+is eventually constant and the fixpoint $\typof^*$ is always reached.

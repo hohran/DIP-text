@@ -175,7 +175,7 @@ context is the subject of Chapter~\ref{ch:typ}.
 
 A \emph{function} of arity $n \in \Nat_0$ is a pair $f = (A, \phi)$ where:
 \begin{itemize}
-  \item $A = (A_1, \ldots, A_n)$ is a list of \emph{argument type sets}, with $A_i \subseteq \Types$ being the set of types acceptable at position $i$,
+  \item $A = (A_1, \ldots, A_n)$ is a list of \emph{argument type sets}, also denoted as $\sig(f)$, with $A_i \subseteq \Types$ being the set of types acceptable at position $i$,
   \item $\phi : \Vals^n \to \Vals$ maps concrete argument values to a result value.
 \end{itemize}
 We denote the set of all functions with $\Funs$ and write $\sigma_F : \Terms \to \Funs$ for the mapping from function name terms to their definitions.
@@ -187,7 +187,7 @@ The substitution $\sigma$ is extended to a function call term $f(t_1, \ldots, t_
 \[
 \sigma\bigl(f(t_1,\ldots,t_n)\bigr) =
 \begin{cases}
-  \Undef & \text{if } \typof(t_i) \notin A_i \text{ for some } i, \\
+  \Undef & \text{if } \typof(t_i) \notin A_i \text{ for } \sig(f) = (A_1,\ldots,A_n) \\
   \phi\bigl(\sigma(t_1),\ldots,\sigma(t_n)\bigr) & \text{otherwise,}
 \end{cases}
 \]
@@ -289,17 +289,17 @@ Each type is treated in its own subsection below.
 
 A \emph{rule body} $B$ is a pair $(B_v, B_E)$, where:
 \begin{itemize}
-  \item $B_v \in \Terms$ is the \emph{value} the body contributes to the head; when absent from the source, $B_v = \true$,
-  \item $B_E = (e_1, \ldots, e_m)$ is an ordered list of expressions forming the body condition.
+  \item $B_v \in \Terms$ is the \emph{value} (also denoted as $\BodyVal(B)$) the body contributes to the head; when absent from the source, $B_v = \true$,
+  \item $B_E = (e_1, \ldots, e_m)$ is an ordered list of expressions forming the body condition, usually denoted as $\BodyCond(B)$.
 \end{itemize}
 
 A body $B$ is \emph{satisfied}, written $\Holds(B)$, iff every expression in $B_E$ holds:
-$$\Holds(B) \iff \forall_{e \in B_E} : \Holds(e)$$
+$$\Holds(B) \iff \forall_{e \in \BodyCond(B)} : \Holds(e)$$
 When $B_E$ is empty, $B$ is satisfied unconditionally.
 
 A \emph{rule} is a pair $(h, \mathbf{B})$ where $\mathbf{B} = (B_1, \ldots, B_k)$ is an ordered list of bodies connected by \texttt{else}.
 Body $B_i$ is only evaluated if no predecessor $B_j$ with $j < i$ was satisfied, i.e.:
-$$\Holds(B_i) \text{ is considered only if } \forall_{j < i} : \neg\Holds(B_j)$$
+$$\Holds(B_i) \text{ is considered only if } \forall \ranges{j}{1}{i-1} : \neg\Holds(B_j)$$
 
 For convenience purposes, we abuse the notation of rule head's components $\RuleRef,\RuleDef,\RuleArgs, and \RuleName$ to be applicable to rules, since each rule only contains a single head; formally said, for $r = (h,\mathbf{B})$ we define:
 \begin{align*}
@@ -346,10 +346,12 @@ allow if { |\label{ex:allow}|
   definitions: both have $\RuleKey(h) = \Undef$, $|\RuleRef(h)| = 2$, and $\RuleName(h) = \texttt{audit}$,
   so they collectively build the object $\sigma(\texttt{audit})$ from two unconditionally satisfied contributions.
   The rule on line~\ref{ex:allowed} is a set accumulating definition with
-  $\RuleKey(h) = \texttt{action}$, contributing one element per satisfied binding.
+  $\RuleKey(h) = \texttt{action}$, contributing one element per satisfied binding of the quantified variable $\texttt{action}$.
+
   The rule on line~\ref{ex:has_role} is a function definition with
   $\RuleArgs(h) = (\texttt{user}, \texttt{role})$.
-  The rule on line~\ref{ex:allow} is a complete definition containing two bodies (separated by \texttt{else}); if both bodies would not be satisfied, the variable specified in the head -- \texttt{allow} -- would be assigned the fallback value \false as defined on line~\ref{ex:default}.
+  The rule on line~\ref{ex:allow} is a complete definition containing bodies $B_1,B_2$ (separated by \texttt{else}), where $\BodyVal(B_1) = \BodyVal(B_2) = \true$.
+  If both $B_1,B_2$ would not hold, the variable specified in the head -- \texttt{allow} -- would be assigned the fallback value \false as defined on line~\ref{ex:default}.
 \end{example}
 
 \subsection{Complete Definitions}
@@ -542,11 +544,10 @@ runtime error.
   Consider two complete definitions for \texttt{allow}:
   \begin{lstlisting}[language=Rego]
 allow := true  if { input.role == "editor" }
-allow := false if { input.role == "editor" }
+allow := false if { input.age < 18 }
 \end{lstlisting}
-  When \texttt{input.role} is \texttt{"editor"}, both bodies are satisfied with
+  For an evaluation context where \texttt{input.role} is \texttt{"editor"} and \texttt{input.age} equals $18$, both bodies are satisfied with
   differing values $\true$ and $\false$, so $v(h_1, \mathbf{B}_1) \neq v(h_2, \mathbf{B}_2)$
-  and neither is $\Undef$ — a conflict.
-  Replacing the second rule with \texttt{allow := true} resolves the conflict, since
-  both rules now agree on the contributed value.
+  and neither is $\Undef$ -- a conflict.
+  A solution to this conflict would be chaining the two bodies into a single rule, implying a precedence to the evaluation.
 \end{example}

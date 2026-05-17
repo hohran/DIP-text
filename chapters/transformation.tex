@@ -2,7 +2,7 @@
 \label{ch:trans}
 
 This chapter walks over the formal specification of the transformation process from \rego into \smtlib.
-The structure of this chapter will correspond to the chapter \ref{ch:form}, which introduced the formal definition of targeted subset of the Rego policy language.
+The structure of this chapter will roughly correspond to the structure of Chapter \ref{ch:form}, which introduced the formal definition of targeted subset of the Rego policy language.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % variables ✓
@@ -20,27 +20,34 @@ The structure of this chapter will correspond to the chapter \ref{ch:form}, whic
 % Additionally, this section presents \emph{union normalization}, i.e., a formal process to transform the union type into a standard (normalized) form.
 %
 % TODO: move to transformation TODO TODO
-% \subsection{Type depth}
-%
-% The \emph{depth} $\depth$ of a types is defined as follows:
-% \begin{itemize}
-%   \item $\depth(\ty) = 0$, for $\ty$ being an atomic type,
-%   \item $\depth(\ty_1 \cup \cdots \cup \ty_m) = \depth(\ty_i)$, for $1 \leq i \leq m$, where $\forall_{1 \leq j \leq m}:\depth(\ty_i) \geq \depth(\ty_j)$,
-%   \item $\depth(\Obj{f_1{:}\ty_1,\ldots,f_n{:}\ty_n}) = 1+\depth(\ty_1 \cup \cdots \cup \ty_n)$,
-%   \item $\depth(\Array{\ty}) = 1+\depth(\ty)$,
-%   \item $\depth(\RegoSet{\ty}) = 1+\depth(\ty)$.
-% \end{itemize}
-%
-% Informally said, atomic types have depth $0$, and composite types have their depth greater by one than their element with the maximum depth.
-% In addition, we allow for the type depth function $\depth$ to be applied directly to terms with the intuitive semantics: $\depth(t) = \depth(\typof(t))$, where $t \in \Terms$.
-% Since $\Unknown$ is not constrained, we set $\depth(\Unknown) = \infty$.
 
 This section describes the transformation of Rego terms into SMT.
-By the specification given in \ref{ch:form}, terms can be either values, variables, references, or function calls.
+By the specification given in Chapter~\ref{ch:form}, terms can be either values, variables, references, or function calls.
 
 Since we will operate with an \smtlib representation of terms, we define a set of valid SMT term encodings with $\STerms$.
-We set such encodings to also inherit the properties of terms, such as depth $\depth$ or type $\typof$.
+% We set such encodings to also inherit the properties of terms, such as depth $\depth$ or type $\typof$.
 During this section, we will iteratively refine the function $\encode: \Terms \to \STerms$.
+
+\subsection{Type definition}
+
+As \smtlib is a statically typed language, we need to firstly declare the sorts of encoded terms.
+To avoid recursive types, we set a dedicated sort for each possible \emph{depth} $\depth$ of types given by the type analysis (given in Chapter~\ref{ch:typ}); the depth is defined as follows:
+\begin{itemize}
+  \item $\depth(\ty) = 0$, for $\ty$ being an atomic type,
+  \item $\depth(\ty_1 \cup \cdots \cup \ty_m) = \depth(\ty_i)$, for $1 \leq i \leq m$, where $\forall_{1 \leq j \leq m}:\depth(\ty_i) \geq \depth(\ty_j)$,
+  \item $\depth(\Obj{k_1{:}\ty_1,\ldots,k_n{:}\ty_n}) = 1+\depth(\ty_1 \cup \cdots \cup \ty_n)$,
+  \item $\depth(\Array{\ty}) = 1+\depth(\ty)$,
+  \item $\depth(\RegoSet{\ty}) = 1+\depth(\ty)$.
+\end{itemize}
+\textit{For the reason of better readability, this definition uses the improper notation of singleton types, where $\{t\}$ is denoted as $t$.
+With the strict notation given in Section~\ref{ss:types:new}, the first case of this definition would be noted as: $\depth(\{t\}) = 0$ for $t$ being an atomic type.}
+
+Informally said, atomic types have depth $0$, and composite types have their depth greater by one than their element with the maximum depth.
+In addition, we allow for the type depth function $\depth$ to be applied directly to terms with the intuitive semantics: $\depth(t) = \depth(\typof(t))$, where $t \in \Terms$.
+Since $\Unknown$ is not constrained, we set $\depth(\Unknown) = \infty$.
+
+For a term $t$, we set the sort of its encoding $\encode(t)$ to be \texttt{$OTypeD_N$}, where $N = \depth(t)$.
+The types $OTypeD_0$ and $OTypeD_i$ are iteratively refined throughout the Section~\ref{trans:ss:vals}.
 
 %%=============================================================
 % 99%
@@ -50,22 +57,23 @@ During this section, we will iteratively refine the function $\encode: \Terms \t
 
 In SMT, variables can be declared in the global scope with the \texttt{declare-fun} construct.
 Since \smtlib has is a strongly-typed language, we need to provide sorts of variables during the declaration.
-For $x \in \Vars$ we set a its sort to be \texttt{OTypeD<N>}, where $N$ is the depth of its type, i.e., $\depth(x)$.
-We will cover the specifics of such type later.
+For $x \in \Vars$ we set a its sort to be \texttt{$OTypeD_N$}, where $N = \depth(x)$ as mentioned in the previous section.
 
-Intuitively, the global scope will only contain global variables.
-Hypothetically, for no clash in variable names (which we ensure), also local variables could be declared with mentioned \texttt{declare-fun} construct.
-We will choose to only specify them locally as expected by the Rego semantics but with the main purpose not to let them pollute the output model.
-For this cause, we will use the \texttt{let} construct for assigned variables, \texttt{exists} for existentially quantified variables, and \texttt{forall} for universally quantified variables.
-Since the \texttt{let} construct does not specify the sort of given local variable, we need to make sure to assign it always a value of expected type.
+Intuitively, the global scope will only contain global variables, i.e., variables $x \in \Globals$.
+Hypothetically, for no clash in variable names, also local variables could be declared with mentioned \texttt{declare-fun} construct.
+We will choose to only specify them locally as expected by the \rego semantics but with the main purpose not to let them pollute the output model.
+For this cause, we will use the \texttt{let} construct for assigned local variables.
+% For this cause, we will use the \texttt{let} construct for assigned variables, \texttt{exists} for existentially quantified variables, and \texttt{forall} for universally quantified variables.
+Since the \texttt{let} construct does not specify the sort of given local variable, we need to make sure to always assign it a (typically symbolic) value of the expected type.
 
 %%=============================================================
 \subsection{Values}
+\label{trans:ss:vals}
 %%-------------------------------------------------------------
 
 This passage reasons about the SMT sorts used to represent given Rego values.
 
-%%-------------------------------------------------------------
+%%------------------------------------------------------------
 \subsubsection{Atomic Values}
 %%.............................................................
 
@@ -80,9 +88,9 @@ This decision is also backed up by the fact that values of this sub-type are not
 The decided representation of $\Int$ is thus the default \texttt{Int} sort.
 
 Since every atomic type $\ty$ is defined to have its depth $\depth(\ty) = 0$, we declare the sort for atomic values as:
-\begin{lstlisting}[language=SMT]
+\begin{lstlisting}[language=SMT,escapechar=|]
 (declare-datatypes ()
-  ((OTypeD0
+  ((OTypeD|$_0$|
     (OString (str String))
     (ONumber (num Int))
     (OBoolean (bool Boolean))
@@ -101,10 +109,10 @@ The implementation of collections brings up difficulties, since by definition th
 As we have already defined a mechanism for capturing specific types of values and each type has a specific depth, we can restrict the SMT representation to operate only on values up to a set maximum depth.
 Such sorts are defined in \smtlib in the theory of algebraic datatypes, which is transformable into the theory of uninterpreted functions.
 
-As we described in the passage \ref{ss:vars:t}, we declare sorts of form \texttt{OTypeD<N>}, where $N$ would be limited to the maximum depth of term type found for given policy, i.e.,
+As we described in the passage \ref{ss:vars:t}, we declare sorts of form \texttt{$OTypeD_N$}, where $N$ would be limited to the maximum depth of term type found for given policy, i.e.,
 $$ N = \max_{t \in \Terms}(\depth(t)) $$
 
-We have already established the atomic sort \texttt{OTypeD0}; in this section we will iteratively define and refine the sort of a higher depth.
+We have already established the atomic sort \texttt{OTypeD$_0$}; in this section we will iteratively define and refine the sort of a higher depth.
 
 %%.............................................................
 \paragraph{Objects.}
@@ -121,7 +129,7 @@ This is due to the property of the most relevant document format in OPA -- JSON 
 
 Thus we define an object of depth $N$ to have SMT sort:
 \begin{center}
-  \texttt{(Array String OTypeD<N-1>)}
+  \texttt{(Array String OTypeD$_{N-1}$)}
 \end{center}
 
 It is important to note that as the Array sort in \smtlib represents a total mapping, meaning we need to explicitly set all unmentioned keys to $\Undef$.
@@ -131,10 +139,10 @@ We can combine this construct with the \texttt{store} operation to create consta
 \begin{figure}
   \label{f:cons-obj}
   \caption{\smtlib snippet for $\encode(\{\q{a}: 1, \q{b}: \true\})$.}
-\begin{lstlisting}[language=SMT]
+\begin{lstlisting}[language=SMT,escapechar=|]
 (store
   (store
-    (as-const (Array OTypeD0 OTypeD0) OUndef)
+    (as-const (Array OTypeD|$_0$| OTypeD|$_0$|) OUndef)
     "a" (ONumber 1))
   "b" (OBoolean true))
 \end{lstlisting}
@@ -145,7 +153,7 @@ We can combine this construct with the \texttt{store} operation to create consta
 Counterintuitively, the SMT Array sort does not properly represent the Rego $\Array{\_}$ type, since -- as already mentioned -- SMT Arrays are full mapping from the key domain, whereas Rego arrays only allow positive integers and only for a specific range starting with $0$.
 For this cause, we implement this type with the \texttt{Seq} sort:
 \begin{center}
-  \texttt{(Seq OTypeD<N-1>)}
+  \texttt{(Seq OTypeD$_{N-1}$)}
 \end{center}
 
 %%.............................................................
@@ -153,7 +161,7 @@ For this cause, we implement this type with the \texttt{Seq} sort:
 Even though \ziii does not explicitly support a designated set theory, they are regularly represented as an array mapping from specified type to boolean, treating only values mapped to \true as defined.
 We will use the constructor \texttt{(Set T)} in place for \texttt{(Array T Bool)} for better clarity.
 \begin{center}
-  \texttt{(Set OTypeD<N-1>)}
+  \texttt{(Set OTypeD$_{N-1}$)}
 \end{center}
 
 %%.............................................................
@@ -165,13 +173,13 @@ This is inadequate to the actual behaviour of composite types, which are allowed
 \end{center}
 For this cause, we specify a designated constructor to explicitly \emph{wrap} a sort into an incremented depth.
 Thus the definition of the depth-specific sort is the following:
-\begin{lstlisting}[language=SMT]
+\begin{lstlisting}[language=SMT,escapechar=|]
 (declare-datatypes ()
-  ((OTypeD<N>
-    (Wrap<N> (wrap<N> OTypeD<N-1>))
-    (OObj<N> (obj<N> (Array String OTypeD<N-1>)))
-    (OArray<N> (arr<N> (Seq OTypeD<N-1>)))
-    (OSet<N> (set<N> (Set OTypeD<N-1>)))
+  ((OTypeD|$_N$|
+    (Wrap|$_N$| (wrap|$_N$| OTypeD|$_{N-1}$|))
+    (OObj|$_N$| (obj|$_N$| (Array String OTypeD|$_{N-1}$|)))
+    (OArray|$_N$| (arr|$_N$| (Seq OTypeD|$_{N-1}$|)))
+    (OSet|$_N$| (set|$_N$| (Set OTypeD|$_{N-1}$|)))
   )))
 \end{lstlisting}
 
@@ -237,9 +245,9 @@ Since we will often need to modify the depth we define algorithms:
 
 For reference prefix $r$ of depth $d$ accessed with key $k$, we create specific selectors based on the composite type of $r$:
 \begin{enumerate}
-  \item object: \texttt{(select (obj$_d$ $r$) $k$)}
-  \item array: \texttt{(seq.nth (arr$_d$ $s$) $s$)}
-  \item set: \texttt{(ite (select (set$_d$ $r$) $k$) $k$ \texttt{Wrap(OUndef,$\depth(k)$)})}
+  \item object: \texttt{(select (obj$_d$ r) k)}
+  \item array: \texttt{(seq.nth (arr$_d$ s) s)}
+  \item set: \texttt{(ite (select (set$_d$ r) k) k \texttt{Wrap(OUndef,$\depth(k)$)})}
 \end{enumerate}
 
 %%=============================================================
@@ -436,7 +444,7 @@ x := v1 if B1 else := v2 if B2
 x := v3 if B3
 \end{lstlisting}
   The three emitted assertions are:
-\begin{lstlisting}[language=SMT]
+\begin{lstlisting}[language=SMT,escapechar=|]
 (assert (= x (ite (or B1 B2 B3) x d)))
 (assert (= x (ite B1 v1 (ite B2 v2 x))))
 (assert (= x (ite B3 v3 x)))
