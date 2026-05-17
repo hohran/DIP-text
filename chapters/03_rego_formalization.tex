@@ -178,7 +178,7 @@ A \emph{function} of arity $n \in \Nat_0$ is a pair $f = (A, \phi)$ where:
   \item $A = (A_1, \ldots, A_n)$ is a list of \emph{argument type sets}, also denoted as $\sig(f)$, with $A_i \subseteq \Types$ being the set of types acceptable at position $i$,
   \item $\phi : \Vals^n \to \Vals$ maps concrete argument values to a result value.
 \end{itemize}
-We denote the set of all functions with $\Funs$ and write $\sigma_F : \Terms \to \Funs$ for the mapping from function name terms to their definitions.
+We denote the set of all functions with $\Funs$ and write $\Funs : \Terms \to \Funs$ for the mapping from function name terms to their definitions.
 
 Function names are terms in $\Terms$.
 Their value under $\sigma$ is $\Undef$, so they do not contribute to the response document.
@@ -191,7 +191,7 @@ The substitution $\sigma$ is extended to a function call term $f(t_1, \ldots, t_
   \phi\bigl(\sigma(t_1),\ldots,\sigma(t_n)\bigr) & \text{otherwise,}
 \end{cases}
 \]
-where $(A, \phi) = \sigma_F(f)$.
+where $(A, \phi) = \Funs(f)$.
 Intuitively, the first case assigns the call an undefined value when any argument has a type not admitted by the function signature $A$, and since no function admits $\Undef$ as an argument type, the first case also subsumes undefined argument propagation.
 
 Infix operators such as $+$, $-$, $==$, or $<$ are syntactic sugar for function calls and are rewritten to prefix form by the OPA compiler.
@@ -465,8 +465,8 @@ under which the body is evaluated.
 The semantics is otherwise identical to a complete definition — the first satisfied body
 $B_i$ determines the return value, and the \texttt{else} chain applies.
 
-User-defined functions enter $\sigma_F$ (as defined is Section~\ref{ss:functions}) through their rules: for a function name $f$
-defined by rules, $\sigma_F(f)$ is constructed from the argument patterns $\RuleArgs(h)$
+User-defined functions enter $\Funs$ (as defined is Section~\ref{ss:functions}) through their rules: for a function name $f$
+defined by rules, $\Funs(f)$ is constructed from the argument patterns $\RuleArgs(h)$
 and the rule bodies, with the argument type set $A$ derived from the types of the patterns.
 This connects function definitions back to the formal definition of functions in
 Section~\ref{ss:functions}.

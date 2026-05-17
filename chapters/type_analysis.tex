@@ -401,23 +401,11 @@ This core of this algorithm are steps~\ref{alg:types:loop} and \ref{alg:types:ch
 A single analysis step computes a new type map $\typof'$ by applying the inference rules \textbf{(Rule-Assign)} and \textbf{(Rule-AccSet)} to every $(h, \mathbf{B}) \in \Rules$.
 This invokes the expression inference given in Section~\ref{sec:expr-inference} for every expression $e$ of bodies $B_i \in \mathbf{B}$, and consequently the term inference (from Section~\ref{sec:term-inference}) for every term contained in $e$.
 
-%% TODO TODO
-\paragraph{Fixpoint.}
-The analysis computes the sequence $(\typof_k)_{k \geq 0}$ defined by
-$\typof_{k+1} = \mathcal{F}(\typof_k)$.
-Iteration continues until two successive maps agree.
-The resulting type map:
-\[
-  \typof^* = \typof_k \quad \text{such that} \quad \mathcal{F}(\typof_k) = \typof_k
-\]
-is a \emph{fixpoint} of $\mathcal{F}$: no further application of any inference rule
-changes any entry, i.e., for every $r \in \Rules_{\mathsf{pkg}}$ and $B_i \in \mathbf{B}$,
-the conclusion's unionize \todo{hmm} update is a no-op under $\typof^*$.
-
 \paragraph{Termination.}
 Every update to $\typof$ either replaces an existing entry with a strictly more precise
-type via $\refine{}{}$, or extends a union with a new member via $\unionize{}{}$; neither
-operation can be applied infinitely often.
-Since the set of terms in $\Rules_{\mathsf{pkg}}$ and $\dom(\Schema)$ is finite, and the
+type via $\refine{}{}$, or extends a union with a new member via $\unionize{}{}$
+Since the set of terms in $\Rules_{\Pkg}$ and $\dom(\Schema)$ is finite, and the
 type lattice $(\Types, \preq)$ has bounded height, the sequence $(\typof_k)_{k \geq 0}$
 is eventually constant and the fixpoint $\typof^*$ is always reached.
+
+%% TODO: example
