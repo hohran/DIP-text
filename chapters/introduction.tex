@@ -1,0 +1,18 @@
+\chapter{Introduction}
+\label{ch:intro}
+
+Modern software services govern their behavior through \emph{policies} — sets of rules describing, for instance, permitted network routes, rate limits, or access rights. Traditionally hard-coded and scattered across source files, policies are difficult to maintain and audit. This has motivated the development of dedicated \emph{policy agents}, programs that run alongside a service and are queried to evaluate whether an action is permitted under the current policy. The most prevalent languages for specifying such policies today are \rego, used by Open Policy Agent (OPA), \cedar, and \openfga.
+
+As systems grow in complexity, ensuring policy correctness becomes increasingly important. Policies encode implicit assumptions about trust and authority, and their behavior can be difficult to predict intuitively, especially when they depend on structured, user-supplied input. Traditional testing is inherently limited: it exercises only a finite set of concrete cases, whereas a policy must behave correctly for an unbounded space of inputs. This gap makes subtle errors easy to miss until they are exploited in production.
+
+The problem is compounded by the fact that policies are rarely static. As organizational requirements evolve, policies are extended, refactored, and combined, and without formal guarantees, even minor changes can introduce contradictions, redundancy, or unintended privilege escalations. Formal reasoning techniques address this by enabling analysis over entire classes of inputs simultaneously, making it possible to detect errors that traditional testing would not find.
+
+The main goal of this work is to introduce procedures for the analysis of \rego policies. The proposed analyses are implemented as part of the tool \verirego, developed by the research group \emph{VeriFIT}. This work makes the following contributions:
+\begin{itemize}
+  \item A formal definition of the analyzed fragment of \rego policies.
+  \item A procedure to encode \rego policies into SMT.
+  \item Two analyses of \rego policies, focusing on 1) possible contradictions and 2) detecting redundant rules.
+\end{itemize}
+
+\paragraph{Structure of the thesis.}
+Chapter~\ref{ch:theory} introduces the necessary background in SMT solving and the \rego language. Chapter~\ref{ch:form} defines the fragment of \rego policies considered in this work. Chapter~\ref{ch:typ} describes the type analysis used to characterize the structure of policy inputs. Chapter~\ref{ch:trans} presents the encoding of \rego policies into SMT, whereas Chapter~\ref{ch:analysis} builds on top of this encoding by introduces the two proposed analyses. Chapter~\ref{ch:impl} describes the implementation in \verirego, and Chapter~\ref{ch:eval} reports on experimental evaluation.
