@@ -1,17 +1,92 @@
+% \chapter{Implementation}
+% \label{ch:impl}
+%
+% This chapter describes the implementation of \verirego, a tool for the verification of \rego access control policies via translation to \smtlib, developed by the VeriFIT research group.
+% The tool is written in Go, reusing the parsing infrastructure of the Open Policy Agent~\cite{opa:git}.
+% We describe the architecture of \verirego and the design of its two main components --- the type analysis and the SMT translation --- which put into practice the theory established in the preceding chapters.
+%
+% \section{Architecture}
+% \label{s:arch}
+%
+% \verirego{} is structured as a two-phase pipeline: a type analysis phase followed by an
+% SMT translation phase.
+% The two phases are connected through a single shared data structure and both operate on
+% the same parsed representation of the input policy.
+%
+% \subsection{Pipeline}
+% \label{ss:pipeline}
+%
+% The tool accepts a \rego{} policy file as its primary input.
+% Additionally, the \texttt{input} and \texttt{data} documents --- which the policy is
+% evaluated against --- can each be provided either as a concrete object (a YAML or JSON
+% file) or as a symbolic description in the form of a JSON Schema.
+% Even though both are marked as optional, using such objects in the policy would result in $\Unknown$ values, which are not translatable.
+%
+% Before type analysis, the parsed policy undergoes a preprocessing step performed by
+% \texttt{pkg/simplify}: local variables are renamed to unique names to avoid shadowing,
+% and eligible predicate definitions are inlined.
+% This produces a simplified AST that the subsequent phases operate on.
+%
+% In the type analysis phase, the type map $\typof$ is constructed.
+% If a concrete or symbolic description of \texttt{input} or \texttt{data} is provided,
+% the package \texttt{pkg/infer} seeds $\typof$ with the types of their fields before any
+% policy-level inference takes place.
+% The package \texttt{pkg/analysis} then traverses the simplified AST and refines $\typof$
+% according to the inference rules described in Chapter~\ref{ch:typ}.
+%
+% In the SMT translation phase, the package \texttt{pkg/smt} consumes $\typof$ and the
+% simplified AST to produce a \smtlib{} formula.
+% The translation proceeds in three ordered passes: first, the bounded-depth SMT sort
+% declarations are generated from the inferred types; second, the global variables are
+% declared; and third, the policy rules are translated into SMT assertions.
+% The resulting formula can then be passed to an SMT solver such as \ziii{} or \cvcv{}.
+%
+% \begin{figure}
+%     \centering
+%     % TODO: pipeline figure
+%     \caption{Data flow through the \verirego{} pipeline.}
+%     \label{fig:pipeline}
+% \end{figure}
+%
+% Each phase is also accessible as a standalone command-line tool: \texttt{cmd/type\_analysis}
+% runs the type analysis and prints the resulting type map, \texttt{cmd/schema\_inference}
+% infers a JSON Schema from a concrete input document, and \texttt{cmd/smt} runs the full
+% pipeline and outputs the \smtlib{} formula.
+% This separation allows intermediate results to be inspected and each phase to be tested
+% in isolation.
+%
+% \subsection{Component interface}
+% \label{ss:interface}
+%
+% The sole coupling between the two phases is the \texttt{TypeAnalyzer} structure, defined
+% in \texttt{pkg/types}.
+% It holds the type map $\typof$, mapping every Rego term encountered during analysis to
+% its inferred type, and is the primary output of the type analysis phase.
+% The SMT translator is instantiated with the \texttt{TypeAnalyzer} and the simplified AST
+% module as its only inputs, and has no knowledge of how the types were inferred --- only
+% of the result.
+%
+% The OPA AST module is the other shared artifact: both phases read the same parsed
+% representation of the policy, but neither modifies it.
+% As a result, the two phases are decoupled in both directions: the type analysis does not
+% depend on any SMT-specific structure, and the SMT translator does not depend on any
+% inference-specific logic.
+
 \chapter{Implementation}
 \label{ch:impl}
 
 This chapter describes the implementation of \verirego, a tool for the verification of \rego access control policies via translation to \smtlib, developed by the VeriFIT research group.
 The tool is written in Go, reusing the parsing infrastructure of the Open Policy Agent~\cite{opa:git}.
-We describe the architecture of \verirego and the design of its two main components --- the type analysis and the SMT translation --- which put into practice the theory established in the preceding chapters.
+We describe the architecture of \verirego and the design of its three main components --- the type analysis, the SMT translation, and the policy analyses --- which put into practice the theory established in the preceding chapters.
 
 \section{Architecture}
 \label{s:arch}
 
-\verirego{} is structured as a two-phase pipeline: a type analysis phase followed by an
-SMT translation phase.
-The two phases are connected through a single shared data structure and both operate on
-the same parsed representation of the input policy.
+\verirego{} is structured as a pipeline: a type analysis phase, followed by an SMT
+translation phase, whose intermediate output is consumed both by the SMT encoding and
+by the policy analyses.
+The phases are connected through shared data structures and all operate on the same
+parsed representation of the input policy.
 
 \subsection{Pipeline}
 \label{ss:pipeline}
@@ -22,11 +97,6 @@ evaluated against --- can each be provided either as a concrete object (a YAML o
 file) or as a symbolic description in the form of a JSON Schema.
 Even though both are marked as optional, using such objects in the policy would result in $\Unknown$ values, which are not translatable.
 
-Before type analysis, the parsed policy undergoes a preprocessing step performed by
-\texttt{pkg/simplify}: local variables are renamed to unique names to avoid shadowing,
-and eligible predicate definitions are inlined.
-This produces a simplified AST that the subsequent phases operate on.
-
 In the type analysis phase, the type map $\typof$ is constructed.
 If a concrete or symbolic description of \texttt{input} or \texttt{data} is provided,
 the package \texttt{pkg/infer} seeds $\typof$ with the types of their fields before any
@@ -35,43 +105,59 @@ The package \texttt{pkg/analysis} then traverses the simplified AST and refines 
 according to the inference rules described in Chapter~\ref{ch:typ}.
 
 In the SMT translation phase, the package \texttt{pkg/smt} consumes $\typof$ and the
-simplified AST to produce a \smtlib{} formula.
-The translation proceeds in three ordered passes: first, the bounded-depth SMT sort
+simplified AST.
+The translation begins with two declaration passes: first, the bounded-depth SMT sort
 declarations are generated from the inferred types; second, the global variables are
-declared; and third, the policy rules are translated into SMT assertions.
-The resulting formula can then be passed to an SMT solver such as \ziii{} or \cvcv{}.
+declared.
+The policy rules are then parsed into an intermediate representation by \texttt{ParseModule()}, which groups rules by their head variable and translates each rule's bodies into a \texttt{RuleDef} structure.
+A \texttt{RuleDef} captures, for each body of a rule: the body condition as an SMT proposition, the assigned value, the local variable bindings, and the source location.
+Importantly, \texttt{ParseModule()} does not emit any SMT assertions; it only constructs this structured representation.
+
+From the \texttt{RuleDef} map, two paths are available.
+For direct SMT encoding, \texttt{RuleToSmtFromDef()} takes all \texttt{RuleDef}s for a
+given head variable and emits the corresponding \smtlib{} assertions.
+Because all complete definitions for the same variable are encoded together, this
+correctly handles the case of multiple complete rules for the same variable.
+For policy analyses, the \texttt{RuleDef} map is consumed directly, without proceeding
+to the encoding step.
+The resulting \smtlib{} formula can be passed to an SMT solver such as \ziii{} or \cvcv{}.
 
 \begin{figure}
     \centering
-    % TODO: pipeline figure
+    \input{figures/verirego-pipeline.tex}
     \caption{Data flow through the \verirego{} pipeline.}
     \label{fig:pipeline}
 \end{figure}
 
-Each phase is also accessible as a standalone command-line tool: \texttt{cmd/type\_analysis}
+Each component is also accessible as a standalone command-line tool: \texttt{cmd/type\_analysis}
 runs the type analysis and prints the resulting type map, \texttt{cmd/schema\_inference}
-infers a JSON Schema from a concrete input document, and \texttt{cmd/smt} runs the full
-pipeline and outputs the \smtlib{} formula.
-This separation allows intermediate results to be inspected and each phase to be tested
-in isolation.
+infers a JSON Schema from a concrete input document, \texttt{cmd/smt} runs the full
+pipeline and outputs the \smtlib{} formula, \texttt{cmd/collision\_analysis} runs the
+collision analysis, and \texttt{cmd/subsume\_analysis} runs the subsumption analysis.
+This separation allows intermediate results to be inspected and each component to be
+tested in isolation.
 
 \subsection{Component interface}
 \label{ss:interface}
 
-The sole coupling between the two phases is the \texttt{TypeAnalyzer} structure, defined
-in \texttt{pkg/types}.
+The coupling between the type analysis and the SMT translation is the \texttt{TypeAnalyzer}
+structure, defined in \texttt{pkg/types}.
 It holds the type map $\typof$, mapping every Rego term encountered during analysis to
 its inferred type, and is the primary output of the type analysis phase.
 The SMT translator is instantiated with the \texttt{TypeAnalyzer} and the simplified AST
 module as its only inputs, and has no knowledge of how the types were inferred --- only
 of the result.
 
-The OPA AST module is the other shared artifact: both phases read the same parsed
-representation of the policy, but neither modifies it.
-As a result, the two phases are decoupled in both directions: the type analysis does not
-depend on any SMT-specific structure, and the SMT translator does not depend on any
-inference-specific logic.
+The coupling between the SMT translation and the policy analyses is the \texttt{RuleDef}
+map produced by \texttt{ParseModule()}.
+The analyses do not depend on the SMT encoding logic; they only require the structured
+rule representation.
+Conversely, the encoding path via \texttt{RuleToSmtFromDef()} does not depend on any
+analysis-specific logic.
 
+The OPA AST module is the shared artifact across all phases: each phase reads the same
+parsed representation of the policy, but none modifies it.
+As a result, the phases are decoupled in both directions throughout the pipeline.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Type Analysis}
 \label{s:ta}
