@@ -1,0 +1,177 @@
+\chapter{Experimental Evaluation}
+
+This chapter will focus on the experiments with the implementation of both the collision analysis and the subsumption analysis as it was described in Chapter~\ref{ch:impl}.
+Additionally, this chapter will be closed with reasoning about the proposals for future work on this topic.
+As the main contribution to the tool by this work is the encoding of \rego policies into SMT, which correspond to the step presented in Section~\ref{s:ir}, these experiments serve mainly as a demonstration of the tool's capabilities.
+
+As each analysis targets a single tested variable, we will denote this variable as $x$ throughout the demonstration.
+Every experiment will be marked by the input \rego policy, the output of the program with cosmetic edits, for the purpose of clear presentation, and potentially a quick note, regarding the experiment.
+
+The symbolic context for these experiments is given by the request document:
+\begin{center}
+\texttt{input = \{ "count": $\Int$, "word": $\Str$ \}}
+\end{center}
+
+\section{Collision Analysis}
+
+\begin{lstlisting}
+package e01
+
+x := 1
+x := 2
+\end{lstlisting}
+\textit{collision on values \texttt{1} and \texttt{2}} \\
+\texttt{input = \{ "count": 3, "word": "a" \}}
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e02
+
+x := 1 if input.count >= 1
+x := 2 if input.count <= 1
+\textit{collision on values \texttt{1} and \texttt{2}} \\
+\texttt{input = \{ "count": 1, "word": "a" \}}
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e03
+
+x := true if input.word == "Hello, World!"
+x := false if contains(input.word, "!")
+\end{lstlisting}
+\textit{collision on values \true and \false} \\
+\texttt{input = \{ "count": 2, "word": "Hello, World!" \}}
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e04
+
+y := 1
+x := z if z := y-1
+x := y if input.count > 1
+\end{lstlisting}
+\textit{collision on values \texttt{z} and \texttt{y}} \\
+\texttt{input = \{ "count": 2, "word": "c" \}}
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e05
+
+x := 1 if {
+  input.count > 0
+} else := 2 if {
+  input.count < 10
+} else := 3 if {
+  input.count != 3
+}
+
+x := 3 if {
+   input.count == 0
+} else := 1 if {
+  input.count == 1
+}
+\end{lstlisting}
+\textit{collision on values \texttt{2} and \texttt{3}} \\
+\texttt{input = \{ "count": 0, "word": "c" \}}
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e06
+
+x := 1 if input.count == 1
+x := 2 if input.count == 2
+x := input.count
+\end{lstlisting}
+\textit{no collisions}
+
+In this example, $x$ is always assigned the value \texttt{input.count}; only the first two rule perform this assignment conditionally.
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e07
+
+x := 5
+x := (2*y+10)/2-y
+
+y := input.count
+\end{lstlisting}
+\textit{no collisions}
+
+This example illustrates the encoding of the commonly known \emph{number forcing trick}, where any number maps to the same value.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Subsumption Analysis}
+
+\begin{lstlisting}
+package e01
+
+x if input.count > 1
+x if input.count > 10
+\end{lstlisting}
+\textit{subsumed condition: \texttt{input.count > 10}}
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e02
+
+x if {
+  input.count > 1
+} else if {
+  input.count > 10
+}
+\end{lstlisting}
+\textit{subsumed condition: \texttt{input.count > 10}}
+
+In the case that the first condition fails, the second condition also always fails.
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e03
+
+x if contains(input.word, "X")
+x if contains(input.word, "XX")
+\end{lstlisting}
+\textit{subsumed condition: \texttt{contains(input.word, "XX")}}
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e04
+
+y := input.count
+x if {
+  y > 5; y < 10
+} else if {
+  y > 0; y < 6
+} else if {
+  y > 3; y < 8
+}
+\end{lstlisting}
+\textit{subsumed condition: \texttt{y > 3; y < 8}}
+
+In this example, the subsumed condition is not directly implied by any of the other conditions, but rather with their disjunction.
+
+\noindent\rule{\linewidth}{0.4pt}
+\begin{lstlisting}
+package e05
+
+arr := [0,0,1,1,0,1]
+
+x if arr[input.count] == 1
+x if input.count == 3
+x if input.count == 4
+\end{lstlisting}
+\textit{subsumed condition: \texttt{input.count == 3}}
+
+In this example, the first condition asserts $x = \true$ when $\texttt{input.count} \in \{2,3,5\}$.
+
+\section{Future Work}
+
+Since \verirego is still in early development, there are multiple ways in which to expand this tool.
+Firstly, \verirego does not support all \rego policies; we can enlarge the fragment of analysable policies by:
+\begin{itemize}
+  \item creating special SMT functions to represent more builtin functions,
+  \item supporting more obscure \rego constructions, such as universal quantifiers,
+  \item encoding accumulating rules.
+\end{itemize}
+Secondly, we can introduce more complex analysis, such as the comparison of multiple policies, i.e., \textit{one policy accepting a request implies another policy also accepting it}, or symbolic testing of a policy's properties.
+Furthermore, the SMT encodings can be further optimized: either by choosing more fitted constructs for specific cases or by integrating more dedicated theory solvers.
