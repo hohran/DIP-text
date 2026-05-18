@@ -516,7 +516,7 @@ Doing this iteratively up until the encoding of $B_1$ equals $\encodeB(\Bodies,\
 \label{ss:rules:encode}
 %%-------------------------------------------------------------
 
-Given a rule $r \in \Rules$, we set its transformation into SMT $\encodeR(r)$, w.r.t. its type, as follows:
+Given a rule $r \in \Rules$, we set its transformation into SMT $\encodeR(r)$, with respect to its type, as follows:
 
 \subsubsection{Default Rules}
 Since default rules contain, by the definition from Section~\ref{ss:default}, a single body $B$ with no conditions, we only set the default value of its head $h$: $\Def(\RuleRef(h)) = \BodyVal(B)$.
@@ -566,4 +566,3 @@ x := v3 if B3
   When only $B3$ holds, both the first (default) and the second assertions reduce to $x = x$ and the third assigns $x = v3$.
   When none of the bodies holds, only the first assertion generates a constraint: $x = d$.
 \end{example}
-

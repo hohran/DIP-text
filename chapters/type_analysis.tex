@@ -375,7 +375,7 @@ The type of $\BodyVal(B_i)$ serves as the element type; the reference is then un
 }
 \]
 
-\section{Analysis Algorithm}
+\section{Type Analysis Algorithm}
 \label{sec:analysis-algorithm}
 
 Let $\Pkg$ be a \rego package given by the rule set $\Rules = \{r_1, \ldots, r_m\}$
@@ -404,8 +404,8 @@ This invokes the expression inference given in Section~\ref{sec:expr-inference} 
 \paragraph{Termination.}
 Every update to $\typof$ either replaces an existing entry with a strictly more precise
 type via $\refine{}{}$, or extends a union with a new member via $\unionize{}{}$
-Since the set of terms in $\Rules_{\Pkg}$ and $\dom(\Schema)$ is finite, and the
+Since the set of terms in $\Rules$ and $\dom(\Schema)$ is finite, and the
 type lattice $(\Types, \preq)$ has bounded height, the sequence $(\typof_k)_{k \geq 0}$
-is eventually constant and the fixpoint $\typof^*$ is always reached.
+is eventually constant and thus converges to the fixpoint of $\typof$.
 
 %% TODO: example

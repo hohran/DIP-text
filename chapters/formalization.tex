@@ -213,16 +213,16 @@ An \emph{expression} is one of the following:
   \item a \emph{condition}: a term $t$ — including function calls — evaluated for its truth value.
         A condition holds iff $\sigma(t) \notin \{\Undef, \bot\}$, denoted $\Holds(t)$.
         A condition may optionally be negated with \texttt{not}, in which case it holds iff $\sigma(t) \in \{\Undef, \bot\}$.
-  \item a \emph{declaration}: an introduction of locally scoped variables (w.r.t. the current rule body), in one of the following forms:
+  \item a \emph{declaration}: an introduction of locally scoped variables (with respect to the current rule body), in one of the following forms:
     \begin{itemize}
       \item \emph{assignment} $x \mathrel{:=} t$: binds $x$ to $\sigma(t)$ and holds iff $\sigma(t) \neq \Undef$.
             This is the primary form of local variable introduction used in this work.
       \item \emph{existential declaration} \texttt{some} [$k$,] $x$ [\texttt{in} $t$]:
             without \texttt{in}, this expression introduces an unconstrained variable $x$ with a value determined by the remaining conditions in the body.
-            With \texttt{in}, followed by a collection $t \in \Terms$, $x$ quantifies the elements of $\sigma(t)$ and (optionally) $k$ quantifies its keys (w.r.t. $x$).
+            With \texttt{in}, followed by a collection $t \in \Terms$, $x$ quantifies the elements of $\sigma(t)$ and (optionally) $k$ quantifies its keys (with respect to $x$).
             The enclosing body is evaluated once for each such binding.
       \item \emph{universal declaration} \texttt{every} [$k$,] $x$ \texttt{in} $t$ \texttt{\{} $e_1 \cdots e_n$ \texttt{\}}:
-            must be bound to a collection $\sigma(t)$, with $x$ quantifying its elements and (optionally) $k$ quantifying its keys (w.r.t. $x$).
+            must be bound to a collection $\sigma(t)$, with $x$ quantifying its elements and (optionally) $k$ quantifying its keys (with respect to $x$).
             This declaration holds iff $e_1 \cdots e_n$ holds for every element of $\sigma(t)$.
             Variables introduced by \texttt{every} are scoped to its body and do not appear in the enclosing rule.
     \end{itemize}
@@ -293,9 +293,9 @@ A \emph{rule body} $B$ is a pair $(B_v, B_E)$, where:
   \item $B_E = (e_1, \ldots, e_m)$ is an ordered list of expressions forming the body condition, usually denoted as $\BodyCond(B)$.
 \end{itemize}
 
-A body $B$ is \emph{satisfied}, written $\Holds(B)$, iff every expression in $B_E$ holds:
+A body $B$ is \emph{satisfied}, written $\Holds(B)$, iff every expression in $\BodyCond(B)$ holds:
 $$\Holds(B) \iff \forall_{e \in \BodyCond(B)} : \Holds(e)$$
-When $B_E$ is empty, $B$ is satisfied unconditionally.
+When $\BodyCond(B)$ is empty, $B$ is satisfied unconditionally.
 
 A \emph{rule} is a pair $(h, \mathbf{B})$ where $\mathbf{B} = (B_1, \ldots, B_k)$ is an ordered list of bodies connected by \texttt{else}.
 Body $B_i$ is only evaluated if no predecessor $B_j$ with $j < i$ was satisfied, i.e.:

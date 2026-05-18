@@ -1,0 +1,160 @@
+\chapter{Proposed Analysis of Rego Policies}
+\label{ch:analysis}
+
+% This chapter blabla
+% It builds on the encoding into SMT provided in the prev chapt
+% In this paper, we propose two actually relevant analysis
+% They operate over a fragment of Rego policies, consisting of complete and default rules, supporting builtin functions specified in Sex
+
+\section{Collision Analysis}
+\label{s:collision}
+
+We recall the definition of the \emph{consistency of policy} as defined in Section~\ref{ss:consistency}.
+A policy is said to be inconsistent in given evaluation context, when two of its rules assign a different value to the same global variable.
+Since \rego is a declarative language, the rules are treated as independent of each other, and so the value of given variable in the response document cannot be defined (even though it is not explicitly \emph{undefined}).
+
+This creates a conflict known as a \emph{collision} of values for the given variable.
+In OPA (the tool for evaluating \rego policies), a collision results in a runtime error.
+This may cause a great problem, especially since policy enforcement (which OPA is used for) is one of the most crucial parts of any modern service.
+
+This section presents an analysis for the specified fragment of \rego policies, for detecting all possible collisions.
+The analysis is designed in way, where it provides a concrete \emph{input} (request query for OPA), for which the collision occurs.
+
+% \subsection{Motivation}
+
+\subsection{Definition of Collision}
+
+Given a concrete evaluation context given by \texttt{input} and a policy $\Pkg$ composed of rules $\Rules = (r_1,\ldots,r_n)$.
+By the definition of rules from Chapter~\ref{s:rules}, each rule is defined by a head $h$ and a list of bodies $B_1,\ldots,B_m$, where $\RuleRef(h)$ specifies the variable which this rule defines and every $B_i$ specifies a value $v$ and conditions which need to be satisfied for the assignment $\RuleRef(h) = v$.
+When all conditions of a body $B_i$ (noted $\BodyCond(B_i)$) are satisfied, we say that the body is also satisfied, denoted $\Holds(B_i)$.
+
+In addition, for a rule containing a list of bodies $(B_1,\ldots,B_m)$ and $\ranges{i}{1}{m}$, the body $B_i$ is only evaluated when $\forall\ranges{j}{1}{i-1}{:}\; \neg\Holds(B_j)$.
+For such a list of bodies, we say, that a body $B_i$ \emph{applies}, denoted as $\Applies(B_i)$ when it is evaluated \emph{and} its conditions are satisfied:
+$$\Applies(B_i) \defiff \forall\ranges{j}{1}{i-1}{:}\; \neg\Holds(B_j) \land \Holds(B_i)$$
+
+Under this definition, we say that a collision \emph{occurs} for a global variable $x \in \Globals$ on values $v_1,v_2$, when the following conditions are met:
+\begin{itemize}
+  \item $v_1 \neq v_2$
+  \item $(h_1,\Bodies_1),(h_2,\Bodies_2) \in \Rules$,
+  \item $\RuleRef(h_1) = \RuleRef(h_2) = x$,
+  \item $B_1 \in \Bodies_1$ and $B_2 \in \Bodies_2$
+  \item $\BodyVal(B_1) = v_1$ and $\BodyVal(B_2) = v_2$
+  \item $\Applies(B_1), \Applies(B_2)$
+\end{itemize}
+This formalizes the already mentioned intuition for collisions.
+It is important to note that default rules cannot contribute to a collision, since they are evaluated only if no other rule applies.
+% What is the approach
+% The algorithm
+
+\subsection{The Approach}
+
+The task of this analysis is to find values $v_1,v_2$ on which a collision can happen for a given variable $h_{col}$.
+We generalize the possible evaluation contexts with a provided $\Schema$.
+
+As the rules of $h_{col}$ can depend on other variables in the policy\footnote{
+  When a rule depends on a variable $x$, we mean that some of the rule's bodies contains an expression referencing $x$.
+}, it is important to encode all rules specifying such variables.
+We can subsume this requirement by encoding all rules from $\Rules \setminus \Rules_{h_{col}}$.
+We call such encoding \emph{partial} over $h_{col}$.
+
+\paragraph{Collision on Concrete Values.}
+To check the collision on concrete values $v_1,v_2 \in \Vals$, we construct a set of all bodies $\{B_1,\ldots,B_n\}$, from rules of $h_{col}$ where $\BodyVal(B_i) = v_1$.
+We will call such a set the \emph{class of $v_1$}, denoted $\Class{v_1}$.
+Additionally, we create the class of $v_2$: $\Class{v_2}$.
+
+The values collide, given the symbolic evaluation context, iff 1) the partial encoding $E$ over $h_{col}$ is satisfiable and 2) $\exists B \in \Class{v_1}, B' \in \Class{v_2}{:}\; E \land \Applies(B) \land \Applies(B')$ is also satisfiable.
+This means that there exists a model for which $h_{col}$ is assigned $v_1$ and $v_2$ simultaneously.
+
+\paragraph{Collision on Variable Values.}
+It is possible for a rule body to have its value $\BodyVal(B)$ specified by a term $t \notin \Vals$.
+When analyzing the collision on body values $t_1,t_2$ (of bodies $B_1,B_2$) where at least one is of this type, we have to take into account, that they might be equal.
+In such a case, contributing both of these values to the same head variable would not result in collision.
+
+To prevent the case of returning a false alarm of a collision, we need to ensure the inequality of $t_1$ and $t_2$.
+Since these values can be defined locally in their bodies, we specify a (fresh) \emph{shared} variable $x_{shared}$.
+During the analysis, a proposition is appended to the conditions of the each analyzed body prior to its encoding: for $B_1$ we extend it by $\BodyVal(B_1) = x_{shared}$ and for $B_2$ by $\BodyVal(B_2) \neq x_{shared}$
+
+The test for collision is then executed in the same way as for concrete values.
+
+\begin{figure}
+  \caption{Example of \rego rules with collision.}
+  \label{fig:colli:ex}
+  \begin{lstlisting}[language=Rego]
+x := 0 if input.count == 0 else := input.count
+x := 1 if input.count > 0
+\end{lstlisting}
+\end{figure}
+
+\begin{example}
+  Consider the rules given in Figure~\ref{fig:colli:ex}.
+  We denote the body of the first rule, with condition \texttt{input.count == 0}, as $B_1$, the second body of the first rule as $B_2$, and the body of the second rule as $B_3$.
+  These bodies (their values) represent the three classes: \texttt{0}, \texttt{1} and \texttt{input.count}.
+
+  Firstly, we check the collision of $x$ on values \texttt{0} and \texttt{1}:
+  The collision can be found only when the partial encoding $E$, i.e., all rules which do not assign to $x$ are satisfiable.
+  Since there are no rules, $E = \true$, and \emph{is} satisfiable.
+  As both values of the classes are concrete and they both contain a single body, we need to check just that $E \land \Applies(B_1) \land \Applies(B_3)$ is satisfiable.
+  This reduces to $$c = 0 \land c > 0$$ where $c$ denotes \texttt{input.count}.
+  There is no $c$ that satisfies this condition, and thus there is no possible input, for which $x$ collides on \texttt{0} and \texttt{1}.
+
+  When checking the collision on values \texttt{0} and \texttt{input.count}, we can notice that $\Applies(B_1) \implies \neg\Applies(B_2)$.
+  Intuitively, the body $B_2$ is only evaluated when $B_1$ does not hold, and thus both bodies can never apply at the same time.
+  This means that $x$ does \emph{not} collide on values \texttt{0} and \texttt{input.count}.
+
+  Lastly, we check the collision on values \texttt{1} and \texttt{input.count}.
+  Since one of the checked values is given by a variable \texttt{input.count}, we need to extend the collision condition by the inequality of both values and thus we get:
+  $$\true \land c > 0 \land c \neq 1$$
+  where the first \true represents the empty condition of $B_2$.
+  The given condition is satisfied for \texttt{input.count} $= 2$ which implies that a collision occurs for $x$ on values \texttt{1} and \texttt{input.count}.
+\end{example}
+
+\section{Subsumption Analysis}
+\label{s:subsumption}
+
+% What it analyzes
+% What is the approach
+% The algorithm
+When a rule body $B$ is \emph{subsume} in a policy $\Pkg$, we mean that omitting $B$ from the policy does not change its semantics, i.e., $B$ is irrelevant to the result of $\Pkg$ in any evaluation context.
+In programming environment, this is equivalent to the term \emph{dead code}.
+Analysing the subsumption of rule bodies helps the understanding of a given policy and makes its encoding as effective as possible.
+
+\subsection{Definition of Subsumption}
+
+Consider a policy $\Pkg$ given by a set of rules $\Rules = \{r_1,\ldots,r_n\}$, and a set of evaluation contexts $S$.
+% Let $r_i = (h,\Bodies)$, where $\Bodies = (B_1,\ldots,B_j,\ldots,B_m)$.
+The body $B$ from a rule $(h,\Bodies)$ is subsumed iff the following holds:
+\begin{align*}
+  \forall C \in S{:}\;
+  \bigcup_{(h',\Bodies') \in \Rules{:}\; \RuleRef(h') = \RuleRef(h)}\bigcup_{B' \in \Bodies'{:}\; B' \neq B}(\Applies(B')) \implies \Applies(B)
+\end{align*}
+This means that for all rules that assign to the same variable $\RuleRef(h)$ and every body $B' \neq B$ from these rules, the disjunction of application of all $B'$ implies the application of $B$.
+
+\textit{This definition assumes that there are no conflicts possible in $\Pkg$ (as defined in Section~\ref{s:collision}).}
+
+\subsection{The Algorithm}
+
+% \begin{algorithm}[H]
+%   \SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+%   \caption{$subsumption(x,B,\Rules)$}\label{alg:subsu}
+%   \Input{$x \in \Terms$, $B$, $\Rules$}
+%   \Output{\true for subsumption, \false otherwise}
+%   \BlankLine
+%   $\Bodies_h \leftarrow \{B'|\; (h,\Bodies) \in \Rules \land \RuleRef(h) = x \land B' \in \Bodies\}$\;
+%   $\Bodies_h \leftarrow \Bodies_h \setminus \{B\}$\;
+%   $P \leftarrow \$ \texttt{(or )}
+%   % \For{$e \in \BodyCond(B)$\label{alg:body:for}} {
+%   %   \uIf {$e{:}\; x = t \land x \notin \Context$} {
+%   %     $\texttt{append}(\LocDefs,(x,\encode(t)))$\;
+%   %     $\Context \leftarrow \Context \cup \{x\}$
+%   %   } \uElseIf {$e{:}\; f(t_1,\ldots,t_n,x) \land $\texttt{arity}$(f) = n$\tcc*[r]{function in assign form}} {
+%   %     $\texttt{append}(\LocDefs,(\encode(x),\encode(f(t_1,\ldots,t_n))))$
+%   %   } \Else {
+%   %     $\Props \leftarrow $(\texttt{and} $\Props$ $\Holds(\encode(e))$)
+%   %   }
+%   % }
+%   % $t \leftarrow $\texttt{ite}($\Props,\; \encode(\BodyVal(B)),\; \mathit{fallback}$)\label{alg:body:ite}\;
+%   % \For{$(x,v) \in \texttt{reversed}(\LocDefs)$\tcc*[r]{wrapping with local variable definitions}} {
+%   %   $t \leftarrow $ (\texttt{let} (($\encode(x)$ $v$)) $t$)
+%   % }
+%   % \Return{$t$}
+% \end{algorithm}
